@@ -4,9 +4,9 @@ import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
-  Phone, MessageSquare, MapPin, Wallet, CalendarDays, User as UserIcon, Briefcase, Building2,
+  Phone, MessageSquare, MapPin, Wallet, CalendarDays, Briefcase, Building2,
   Award, Users2, Clock, Instagram, Link as LinkIcon, GraduationCap, Mail, LayoutGrid, ClipboardList,
-  FileText, CheckSquare, HelpCircle, Bookmark, Share2, Target
+  FileText, CheckSquare, HelpCircle, Bookmark, Target
 } from 'lucide-react';
 import type { Job, WorkType } from '@/lib/types';
 import { CategoryIcon } from '@/components/icons';
@@ -17,6 +17,7 @@ import { JobCard } from '@/components/job-card';
 import { SaveAdButton } from './save-ad-button';
 import { cn } from '@/lib/utils';
 import { getCategoryById } from '@/lib/data';
+import { TimeAgo } from '@/components/ui/time-ago';
 
 const workTypeTranslations: { [key in WorkType]: string } = {
   full_time: 'دوام كامل',
@@ -137,7 +138,9 @@ export function JobMobileDetails({ job, similarJobs }: JobMobileDetailsProps) {
                          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground text-sm">
                             <div className="flex items-center gap-1.5">
                                 <CalendarDays className="h-4 w-4" />
-                                <span>نُشر: {job.postedAt}</span>
+                                <span>
+                                    نُشر: <TimeAgo date={job.createdAtISO || new Date().toISOString()} initialText={job.postedAt} />
+                                </span>
                             </div>
                         </div>
                     </CardHeader>

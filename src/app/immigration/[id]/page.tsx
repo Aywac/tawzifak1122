@@ -1,6 +1,6 @@
 import React from 'react';
 import { notFound } from 'next/navigation';
-import { getImmigrationPostById, getImmigrationPosts } from '@/lib/data';
+import { getCachedImmigrationById, getImmigrationPosts } from '@/lib/data';
 import type { Metadata } from 'next';
 import { MobilePageHeader } from '@/components/layout/mobile-page-header';
 import { Plane } from 'lucide-react';
@@ -37,7 +37,7 @@ interface JobPostingJsonLd {
 }
 
 export async function generateMetadata({ params }: ImmigrationDetailPageProps): Promise<Metadata> {
-  const post = await getImmigrationPostById(params.id);
+  const post = await getCachedImmigrationById(params.id);
   const baseUrl = 'https://www.tawzifak.com';
   const siteThumbnail = 'https://i.postimg.cc/MH0BfvFB/og-image.jpg';
   
@@ -121,7 +121,7 @@ export async function generateMetadata({ params }: ImmigrationDetailPageProps): 
 
 
 export default async function ImmigrationDetailPage({ params }: ImmigrationDetailPageProps) {
-    const post = await getImmigrationPostById(params.id);
+    const post = await getCachedImmigrationById(params.id);
 
     if (!post) {
         notFound();

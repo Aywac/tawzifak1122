@@ -4,14 +4,13 @@ import Link from 'next/link';
 import { JobCard } from '@/components/job-card';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { getJobOffers, getJobSeekers, getTestimonials, getCompetitions, getImmigrationPosts } from '@/lib/data';
+import { getCachedHomePageJobs, getCachedHomePageSeekers, getCachedHomePageCompetitions, getCachedHomePageImmigration, getCachedGlobalStats, getCachedHomePageTestimonials } from '@/lib/data';
 import React, { Suspense } from 'react';
 import { Newspaper, Briefcase, Users, ArrowLeft, Landmark, Plane } from 'lucide-react';
 import { HomePageFilters } from './home-page-filters';
 import { HomeCarousel } from './home-carousel';
 import { HomeExtraSections } from './home-extra-sections';
 import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
 import { HomeHeaderMobile } from './home-header-mobile';
 import { CompetitionCard } from '@/components/competition-card';
 import { ImmigrationCard } from '@/components/immigration-card';
@@ -154,40 +153,29 @@ interface HomePageData {
 }
 
 async function getHomePageData(isMobile: boolean): Promise<HomePageData> {
-  const counts = {
-    jobOffers: isMobile ? 4 : 8,
-    jobSeekers: isMobile ? 2 : 4,
-    competitions: isMobile ? 2 : 4,
-    immigrationPosts: isMobile ? 4 : 8,
-    testimonials: isMobile ? 1 : 4,
-  };
+  const [
+    jobOffersData,
+    jobSeekersData,
+    competitionsData,
+    immigrationPostsData,
+    testimonialsData,
+    statsData,
+  ] = await Promise.all([
+    getCachedHomePageJobs(isMobile),
+    getCachedHomePageSeekers(isMobile),
+    getCachedHomePageCompetitions(isMobile),
+    getCachedHomePageImmigration(isMobile),
+    getCachedHomePageTestimonials(isMobile),
+    getCachedGlobalStats(),
+  ]);
 
-  const [  
-    jobOffersData,  
-    jobSeekersData,  
-    competitionsData,  
-    immigrationPostsData,  
-    testimonialsData,  
-  ] = await Promise.all([  
-    getJobOffers({ count: counts.jobOffers }),  
-    getJobSeekers({ count: counts.jobSeekers }),  
-    getCompetitions({ count: counts.competitions }),  
-    getImmigrationPosts({ count: counts.immigrationPosts }),  
-    getTestimonials(),  
-  ]);  
-
-  return {  
-    jobOffers: jobOffersData.data,  
-    jobSeekers: jobSeekersData.data,  
-    competitions: competitionsData.data,  
-    immigrationPosts: immigrationPostsData.data,  
-    testimonials: testimonialsData.slice(0, counts.testimonials),  
-    stats: {  
-      jobs: jobOffersData.totalCount,  
-      competitions: competitionsData.totalCount,  
-      immigration: immigrationPostsData.totalCount,  
-      seekers: jobSeekersData.totalCount,  
-    }  
+  return {
+    jobOffers: jobOffersData.data,
+    jobSeekers: jobSeekersData.data,
+    competitions: competitionsData.data,
+    immigrationPosts: immigrationPostsData.data,
+    testimonials: testimonialsData.data,
+    stats: statsData,
   };
 }
 

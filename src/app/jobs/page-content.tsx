@@ -1,10 +1,10 @@
 
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { JobCard } from '@/components/job-card';
 import { JobFilters } from '@/components/job-filters';
-import type { Job, WorkType } from '@/lib/types';
+import type { FirestoreCursor, Job, WorkType } from '@/lib/types';
 import { useSearchParams } from 'next/navigation';
 import { getJobOffers } from '@/lib/data';
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,7 @@ export function PageContent() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [page, setPage] = useState(1);
+  const [lastDoc, setLastDoc] = useState<FirestoreCursor>(null);
 
   const q = searchParams.get('q');
   const country = searchParams.get('country');
@@ -26,38 +26,51 @@ export function PageContent() {
   const category = searchParams.get('category');
   const workType = searchParams.get('workType');
 
-  const fetchAndSetJobs = useCallback(async (pageNum: number, reset: boolean) => {
-    if (pageNum === 1) setLoading(true);
-    else setLoadingMore(true);
-
-    const { data: newJobs, totalCount } = await getJobOffers({
-      searchQuery: q || undefined,
-      country: country || undefined,
-      city: city || undefined,
-      categoryId: category || undefined,
-      workType: (workType as WorkType) || undefined,
-      page: pageNum,
-      limit: ITEMS_PER_PAGE,
-    });
-
-    setJobs(prev => (reset ? newJobs : [...prev, ...newJobs]));
-    setHasMore((pageNum * ITEMS_PER_PAGE) < totalCount);
-
-    if (pageNum === 1) setLoading(false);
-    else setLoadingMore(false);
-  }, [q, country, city, category, workType]);
-
   useEffect(() => {
     setJobs([]);
-    setPage(1);
+    setLastDoc(null);
     setHasMore(true);
-    fetchAndSetJobs(1, true);
-  }, [q, country, city, category, workType, fetchAndSetJobs]);
+    setLoading(true);
+    fetchAndSetJobs(null, true);
+  }, [q, country, city, category, workType]);
+
+  const fetchAndSetJobs = async (cursor: FirestoreCursor, isReset: boolean) => {
+    try {
+      const { data: newJobs, lastDoc: nextCursor } = await getJobOffers({
+        searchQuery: q || undefined,
+        country: country || undefined,
+        city: city || undefined,
+        categoryId: category || undefined,
+        workType: (workType as WorkType) || undefined,
+        limit: ITEMS_PER_PAGE,
+        lastDoc: cursor,
+      });
+
+      if (isReset) {
+        setJobs(newJobs);
+      } else {
+        setJobs(prev => [...prev, ...newJobs]);
+      }
+
+      setLastDoc(nextCursor);
+
+      if (newJobs.length < ITEMS_PER_PAGE) {
+        setHasMore(false);
+      } else {
+        setHasMore(true);
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  };
 
   const loadMore = () => {
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchAndSetJobs(nextPage, false);
+    if (!lastDoc) return;
+    setLoadingMore(true);
+    fetchAndSetJobs(lastDoc, false);
   };
 
   return (
@@ -69,7 +82,7 @@ export function PageContent() {
       </div>
 
       <div className="container pt-4 pb-6">
-        {loading ? (
+        {loading && jobs.length === 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {Array.from({ length: 12 }).map((_, i) => (
               <div key={i} className="bg-muted rounded-lg h-48 animate-pulse" />

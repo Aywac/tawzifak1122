@@ -4,8 +4,9 @@
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import { serverTimestamp } from 'firebase/firestore';
+import { auth } from '@/lib/firebase';
+import { createUserDocument } from '@/lib/data';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -57,7 +58,7 @@ export function SignupForm() {
       ];
       const randomColor = colors[Math.floor(Math.random() * colors.length)];
 
-      await setDoc(doc(db, 'users', user.uid), {
+      await createUserDocument(user.uid, {
         name: values.name,
         email: values.email,
         avatarColor: randomColor,

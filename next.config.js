@@ -2,6 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   trailingSlash: false,
+  experimental: {
+    optimizeCss: true,
+  },
   images: {
     unoptimized: false,
     remotePatterns: [
@@ -40,6 +43,12 @@ const nextConfig = {
           hostname: 'www.tawzifak.com',
           port: '',
           pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+        port: '',
+        pathname: '/**',
       }
     ],
   },

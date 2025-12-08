@@ -5,13 +5,14 @@ import Link from 'next/link';
 import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, Users, Building, MapPin } from 'lucide-react';
+import { Calendar, MapPin } from 'lucide-react';
 import type { Competition } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getOrganizerByName } from '@/lib/data';
 import { CategoryIcon } from './icons';
 import { Separator } from './ui/separator';
+import { TimeAgo } from '@/components/ui/time-ago';
 
 interface CompetitionCardProps {
   competition: Competition | null;
@@ -97,7 +98,9 @@ export function CompetitionCard({ competition }: CompetitionCardProps) {
       </CardContent>
 
       <CardFooter className="p-4 pt-0 mt-auto flex items-center justify-between">
-         <span className="text-xs text-muted-foreground">{competition.postedAt}</span>
+        <span className="text-xs text-muted-foreground">
+          <TimeAgo date={competition.createdAtISO || new Date().toISOString()} initialText={competition.postedAt} />
+        </span>
         <Button asChild size="sm" variant="secondary" className="text-sm rounded-lg active:scale-95 transition-transform text-secondary-foreground hover:bg-secondary/80">
           <Link href={detailUrl}>عرض التفاصيل</Link>
         </Button>

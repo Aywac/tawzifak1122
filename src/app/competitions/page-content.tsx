@@ -1,16 +1,15 @@
 'use client';
 
-import { Suspense, useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { CompetitionCard } from '@/components/competition-card';
 import { CompetitionFilters } from '@/components/competition-filters';
-import type { Competition } from '@/lib/types';
+import type { Competition, FirestoreCursor } from '@/lib/types';
 import { useSearchParams } from 'next/navigation';
 import { getCompetitions } from '@/lib/data';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 
 const ITEMS_PER_PAGE = 16;
-const CACHE_KEY_PREFIX = 'competitions_cache_';
 
 function CompetitionFiltersSkeleton() {
   return <div className="h-14 bg-muted rounded-xl w-full animate-pulse" />;
@@ -19,66 +18,51 @@ function CompetitionFiltersSkeleton() {
 export function PageContent() {
   const searchParams = useSearchParams();
   const [competitions, setCompetitions] = useState<Competition[]>([]);
+  
+  const [lastDoc, setLastDoc] = useState<FirestoreCursor>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [page, setPage] = useState(1);
 
   const q = searchParams.get('q');
-  
-  const getCacheKey = useCallback(() => {
-    return `${CACHE_KEY_PREFIX}${q || ''}`;
-  }, [q]);
-
-  const fetchAndSetCompetitions = useCallback(async (pageNum: number, reset: boolean) => {
-    if(pageNum === 1) setLoading(true); else setLoadingMore(true);
-
-    const { data: newCompetitions, totalCount } = await getCompetitions({
-      searchQuery: q || undefined,
-      page: pageNum,
-      limit: ITEMS_PER_PAGE,
-    });
-
-    setCompetitions(prev => {
-        const updatedCompetitions = reset ? newCompetitions : [...prev, ...newCompetitions];
-        try {
-            sessionStorage.setItem(getCacheKey(), JSON.stringify({
-                items: updatedCompetitions,
-                page: pageNum,
-                hasMore: (pageNum * ITEMS_PER_PAGE) < totalCount
-            }));
-        } catch (e) { console.error("Failed to save to sessionStorage", e); }
-        return updatedCompetitions;
-    });
-    setHasMore((pageNum * ITEMS_PER_PAGE) < totalCount);
-
-    if(pageNum === 1) setLoading(false); else setLoadingMore(false);
-  }, [q, getCacheKey]);
 
   useEffect(() => {
-    const cacheKey = getCacheKey();
-    try {
-        const cachedData = sessionStorage.getItem(cacheKey);
-        if (cachedData) {
-            const { items, page: cachedPage, hasMore: cachedHasMore } = JSON.parse(cachedData);
-            setCompetitions(items);
-            setPage(cachedPage);
-            setHasMore(cachedHasMore);
-            setLoading(false);
-            return;
-        }
-    } catch(e) { console.error("Failed to read from sessionStorage", e); }
-    
     setCompetitions([]);
-    setPage(1);
+    setLastDoc(null);
     setHasMore(true);
-    fetchAndSetCompetitions(1, true);
-  }, [q, fetchAndSetCompetitions, getCacheKey]);
+    setLoading(true);
+    fetchCompetitions(null, true);
+  }, [q]);
+
+  const fetchCompetitions = async (cursor: FirestoreCursor, isReset: boolean) => {
+    try {
+      const { data: newComps, lastDoc: nextCursor } = await getCompetitions({
+        searchQuery: q || undefined,
+        limit: ITEMS_PER_PAGE,
+        lastDoc: cursor
+      });
+
+      if (isReset) {
+        setCompetitions(newComps);
+      } else {
+        setCompetitions(prev => [...prev, ...newComps]);
+      }
+
+      setLastDoc(nextCursor);
+      setHasMore(newComps.length === ITEMS_PER_PAGE);
+
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  };
 
   const loadMore = () => {
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchAndSetCompetitions(nextPage, false);
+    if (!lastDoc) return;
+    setLoadingMore(true);
+    fetchCompetitions(lastDoc, false);
   };
 
   return (
@@ -90,11 +74,11 @@ export function PageContent() {
           </Suspense>
         </div>
       </div>
-      
+
       <div className="container pt-4 pb-6">
-        {loading ? (
+        {loading && competitions.length === 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {Array.from({ length: 12 }).map((_, i) => (
+            {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="bg-muted rounded-lg h-48 animate-pulse" />
             ))}
           </div>

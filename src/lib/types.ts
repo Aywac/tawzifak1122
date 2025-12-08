@@ -1,5 +1,7 @@
 
-import type { Timestamp } from 'firebase/firestore';
+import type { Timestamp, DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
+
+export type FirestoreCursor = QueryDocumentSnapshot<DocumentData, DocumentData> | null;
 
 export interface Category {
   id: string;
@@ -36,6 +38,7 @@ export interface Job {
   likes?: number;
   postedAt: string; // This is a derived string like "2 days ago"
   createdAt: Timestamp;
+  createdAtISO?: string;
   ownerName: string;
   ownerAvatarColor?: string;
   ownerPhotoURL?: string | null;
@@ -82,6 +85,7 @@ export interface Competition {
   // Timestamps
   postedAt: string;
   createdAt: Timestamp;
+  createdAtISO?: string;
   isNew?: boolean;
 }
 
@@ -127,6 +131,7 @@ export interface ImmigrationPost {
   email?: string;
   instagram?: string;
   createdAt: Timestamp;
+  createdAtISO?: string;
   postedAt: string;
   isNew?: boolean;
 }
@@ -157,6 +162,7 @@ export interface Testimonial {
     content: string;
     rating: number;
     createdAt: Timestamp;
+    createdAtISO?: string;
     postedAt: string;
 }
 
@@ -194,4 +200,10 @@ export interface ContactMessage {
 export interface Country {
   name: string;
   cities: string[];
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  totalCount?: number;
+  lastDoc: FirestoreCursor;
 }

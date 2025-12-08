@@ -21,6 +21,7 @@ import { useAuth } from '@/context/auth-context';
 import { Loader2 } from 'lucide-react';
 import { reauthenticateWithCredential, EmailAuthProvider, updatePassword } from 'firebase/auth';
 import { UserAvatar } from '@/components/user-avatar';
+import { uploadToCloudinary } from '@/lib/cloudinary';
 
 const profileSchema = z.object({
   name: z.string().min(3, { message: 'الاسم يجب أن يكون 3 أحرف على الأقل.' }),
@@ -82,7 +83,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
       reader.onload = () => {
         const img = new Image();
         img.src = reader.result as string;
-        img.onload = () => {
+        img.onload = async () => {
           const size = Math.min(img.width, img.height);
           const canvas = document.createElement('canvas');
           canvas.width = size;
@@ -101,13 +102,25 @@ export function ProfileForm({ user }: ProfileFormProps) {
           ctx.clip();
           ctx.drawImage(img, x, y, size, size, 0, 0, size, size);
           const croppedData = canvas.toDataURL('image/png');
-          profileForm.setValue('photoURL', croppedData, { shouldValidate: true, shouldDirty: true });
-          
-          setIsProcessingImage(false);
-          toast({
-            title: "تم تحميل الصورة بنجاح",
-            description: "تم قص الصورة تلقائياً للحفاظ على التناسب.",
-          });
+
+          try {
+             const secureUrl = await uploadToCloudinary(croppedData);
+             
+             profileForm.setValue('photoURL', secureUrl, { shouldValidate: true, shouldDirty: true });
+             
+             toast({
+              title: "تم تحميل الصورة بنجاح",
+              description: "تم قص الصورة تلقائياً للحفاظ على التناسب.",
+            });
+          } catch (error) {
+             toast({
+                variant: "destructive",
+                title: "خطأ",
+                description: "فشل رفع الصورة.",
+             });
+          } finally {
+             setIsProcessingImage(false);
+          }
         };
       };
       reader.onerror = () => {

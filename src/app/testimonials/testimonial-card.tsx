@@ -1,9 +1,10 @@
 
 import type { Testimonial } from '@/lib/types';
-import { Card, CardContent } from '@/components/ui/card';
+import { CardContent } from '@/components/ui/card';
 import { UserAvatar } from '@/components/user-avatar';
 import { Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { TimeAgo } from '@/components/ui/time-ago';
 
 interface TestimonialCardProps {
   testimonial: Testimonial;
@@ -16,7 +17,9 @@ export function TestimonialCard({ testimonial }: TestimonialCardProps) {
         <UserAvatar name={testimonial.userName} color={testimonial.userAvatarColor} className="h-12 w-12 text-xl shadow-inner" />
         <div>
           <h4 className="font-bold text-lg text-foreground">{testimonial.userName}</h4>
-          <p className="text-xs text-muted-foreground">{testimonial.postedAt}</p>
+          <p className="text-xs text-muted-foreground">
+            <TimeAgo date={testimonial.createdAtISO || new Date().toISOString()} initialText={testimonial.postedAt} />
+          </p>
         </div>
       </div>
       <div className="flex items-center gap-1 text-yellow-500 mb-4">

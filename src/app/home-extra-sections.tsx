@@ -2,8 +2,8 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Briefcase, Star, Users, MessageSquare, Landmark, Plane, BarChart3, StarIcon } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Briefcase, Users, MessageSquare, Landmark, Plane, BarChart3 } from 'lucide-react';
 import type { Testimonial } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -11,11 +11,16 @@ import { cn } from '@/lib/utils';
 import { TestimonialCard } from '@/app/testimonials/testimonial-card';
 import { Separator } from '@/components/ui/separator';
 
-const CountUp = ({ end, duration = 2 }: { end: number, duration?: number }) => {
+const CountUp = ({ end = 0, duration = 2 }: { end?: number, duration?: number }) => {
   const [count, setCount] = useState(0);
   const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
+    if (!end || end === 0) {
+      setCount(0);
+      return;
+    }
+
     let start = 0;
     const frameDuration = 1000 / 60;
     const totalFrames = Math.round(duration * 1000 / frameDuration);
@@ -38,32 +43,32 @@ const CountUp = ({ end, duration = 2 }: { end: number, duration?: number }) => {
     return () => clearInterval(timer);
   }, [end, duration]);
 
-  return <span ref={ref}>{count.toLocaleString()}</span>;
+  return <span ref={ref}>{(count || 0).toLocaleString()}</span>;
 };
 
-function StatsSection({ stats }: { stats: { jobs: number, competitions: number, immigration: number, seekers: number } }) {
+function StatsSection({ stats }: { stats: { jobs?: number, competitions?: number, immigration?: number, seekers?: number } }) {
   const statItems = [
     {
       label: "عروض عمل",
-      count: stats.jobs,
+      count: stats.jobs || 0,
       icon: Briefcase,
       color: "#0D47A1", // Dark Blue for Job Offers
     },
     {
       label: "فرصة هجرة",
-      count: stats.immigration,
+      count: stats.immigration || 0,
       icon: Plane,
       color: "#0ea5e9", // Sky Blue for Immigration
     },
     {
       label: "مباراة عمومية",
-      count: stats.competitions,
+      count: stats.competitions || 0,
       icon: Landmark,
       color: "#14532d", // Dark Green for Competitions
     },
     {
       label: "باحث عن عمل",
-      count: stats.seekers,
+      count: stats.seekers || 0,
       icon: Users,
       color: "#424242", // Dark Gray for Job Seekers
     }

@@ -3,9 +3,9 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
-  CalendarDays, Target, FileText, Link as LinkIcon, Plane, ClipboardList, Info, MapPin,
+  CalendarDays, Target, Link as LinkIcon, ClipboardList, Info, MapPin,
   GraduationCap, Briefcase, Users, Award, Wallet, HelpCircle, Mail, MessageSquare,
-  Instagram, Phone, Bookmark, Share2, CheckSquare, LayoutGrid
+  Instagram, Phone, Bookmark, CheckSquare, LayoutGrid
 } from 'lucide-react';
 import type { ImmigrationPost } from '@/lib/types';
 import { ReportAdDialog } from '@/app/jobs/[id]/report-ad-dialog';
@@ -15,6 +15,7 @@ import { CategoryIcon } from '@/components/icons';
 import { getProgramTypeDetails, cn } from '@/lib/utils';
 import { ShareButton } from '@/app/jobs/[id]/share-button';
 import { Separator } from '@/components/ui/separator';
+import { TimeAgo } from '@/components/ui/time-ago';
 
 const InfoItem = ({ icon: Icon, label, value, color }: { icon: React.ElementType; label: string; value: string | number | undefined; color?: string }) => {
     if (!value) return null;
@@ -130,7 +131,9 @@ export function ImmigrationDesktopDetails({ post, similarPosts }: ImmigrationDes
                     <div className="flex items-center gap-x-4 text-muted-foreground text-sm pt-2">
                         <div className="flex items-center gap-1.5">
                             <CalendarDays className="h-4 w-4" />
-                            <span>نُشرت: {post.postedAt}</span>
+                            <span>
+                                نُشرت: <TimeAgo date={post.createdAtISO || new Date().toISOString()} initialText={post.postedAt} />
+                            </span>
                         </div>
                     </div>
                 </CardHeader>

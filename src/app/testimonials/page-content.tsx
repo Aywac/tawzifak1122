@@ -1,70 +1,71 @@
 'use client';
 
-import { getTestimonials as getDbTestimonials } from '@/lib/data';
 import { TestimonialCard } from './testimonial-card';
-import type { Testimonial } from '@/lib/types';
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import type { Testimonial, FirestoreCursor } from '@/lib/types';
+import { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import { getTestimonials } from '@/lib/data';
+import { Loader2 } from 'lucide-react';
 
-const TESTIMONIALS_PER_PAGE = 8;
-const CACHE_KEY = 'testimonials_cache';
+const ITEMS_PER_PAGE = 12;
 
 export function PageContent() {
-  const [allTestimonials, setAllTestimonials] = useState<Testimonial[]>([]);
+  const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+  const [lastDoc, setLastDoc] = useState<FirestoreCursor>(null);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-
-  const fetchTestimonials = useCallback(async () => {
-      setLoading(true);
-      const data = await getDbTestimonials();
-      setAllTestimonials(data);
-      try {
-        sessionStorage.setItem(CACHE_KEY, JSON.stringify(data));
-      } catch (e) { console.error("Failed to save to sessionStorage", e); }
-      setLoading(false);
-  }, []);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   
-  useEffect(() => {
+  const isInitialized = useRef(false);
+
+  const fetchTestimonials = async (cursor: FirestoreCursor) => {
+    if (cursor) setLoadingMore(true);
+    
     try {
-        const cachedData = sessionStorage.getItem(CACHE_KEY);
-        if (cachedData) {
-            setAllTestimonials(JSON.parse(cachedData));
-            setLoading(false);
-        } else {
-            fetchTestimonials();
-        }
-    } catch (e) {
-        console.error("Failed to read from sessionStorage", e);
-        fetchTestimonials();
+      const { data: newReviews, lastDoc: nextCursor } = await getTestimonials({
+          limit: ITEMS_PER_PAGE,
+          lastDoc: cursor
+      });
+
+      setTestimonials(prev => {
+        const existingIds = new Set(prev.map(t => t.id));
+        const uniqueNewReviews = newReviews.filter(t => !existingIds.has(t.id));
+        
+        return [...prev, ...uniqueNewReviews];
+      });
+
+      setLastDoc(nextCursor);
+      
+      if (newReviews.length < ITEMS_PER_PAGE) {
+          setHasMore(false);
+      }
+    } catch (error) {
+      console.error("Failed to load testimonials", error);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
     }
-  }, [fetchTestimonials]);
-
-  const loadMoreTestimonials = () => {
-    setPage(prevPage => prevPage + 1);
   };
-  
-  const displayedTestimonials = useMemo(() => {
-    return allTestimonials.slice(0, page * TESTIMONIALS_PER_PAGE);
-  }, [allTestimonials, page]);
 
-  const hasMore = useMemo(() => {
-    return displayedTestimonials.length < allTestimonials.length;
-  }, [displayedTestimonials, allTestimonials]);
+  useEffect(() => {
+    if (!isInitialized.current) {
+      isInitialized.current = true;
+      fetchTestimonials(null);
+    }
+  }, []);
 
-  if (loading) {
+  const loadMore = () => {
+    if (!lastDoc) return;
+    fetchTestimonials(lastDoc);
+  };
+
+  if (loading && testimonials.length === 0) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="flex flex-col space-y-3">
-            <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-full bg-muted animate-pulse" />
-              <div className="space-y-2">
-                <div className="h-4 w-[100px] bg-muted rounded animate-pulse" />
-                <div className="h-3 w-[70px] bg-muted rounded animate-pulse" />
-              </div>
-            </div>
-            <div className="h-4 w-[80px] bg-muted rounded animate-pulse" />
-            <div className="h-16 w-full bg-muted rounded animate-pulse" />
+            <div className="h-12 w-12 rounded-full bg-muted animate-pulse" />
+            <div className="h-24 w-full bg-muted rounded-lg animate-pulse" />
           </div>
         ))}
       </div>
@@ -74,15 +75,20 @@ export function PageContent() {
   return (
     <>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-        {displayedTestimonials.map((testimonial) => (
+        {testimonials.map((testimonial) => (
           <TestimonialCard key={testimonial.id} testimonial={testimonial} />
         ))}
       </div>
 
       {hasMore && (
-        <div className="text-center mt-8">
-          <Button onClick={loadMoreTestimonials} size="lg" className="active:scale-95 transition-transform" variant="outline">
-            تحميل المزيد
+        <div className="text-center mt-12">
+          <Button onClick={loadMore} disabled={loadingMore} size="lg" variant="outline" className="active:scale-95 transition-transform">
+            {loadingMore ? (
+                <>
+                    <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                    جاري التحميل...
+                </>
+            ) : 'تحميل المزيد'}
           </Button>
         </div>
       )}

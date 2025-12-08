@@ -12,6 +12,10 @@
 /.next/
 /out/
 
+# development
+/src/app/admin/recalc-stats
+/src/app/migrate-all-images
+
 # production
 /build
 

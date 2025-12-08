@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { notFound } from 'next/navigation';
-import { getJobById, getJobSeekers } from '@/lib/data';
+import { getCachedJobById, getJobSeekers } from '@/lib/data';
 import type { Metadata } from 'next';
 import { MobilePageHeader } from '@/components/layout/mobile-page-header';
 import { User as UserIcon } from 'lucide-react';
@@ -14,7 +14,7 @@ interface JobDetailPageProps {
 }
 
 export async function generateMetadata({ params }: JobDetailPageProps): Promise<Metadata> {
-  const job = await getJobById(params.id);
+  const job = await getCachedJobById(params.id);
   
   if (!job) {
     return {
@@ -33,7 +33,7 @@ export async function generateMetadata({ params }: JobDetailPageProps): Promise<
 }
 
 export default async function WorkerDetailPage({ params }: JobDetailPageProps) {
-    const job = await getJobById(params.id);
+    const job = await getCachedJobById(params.id);
 
     if (!job || job.postType !== 'seeking_job') {
         notFound();

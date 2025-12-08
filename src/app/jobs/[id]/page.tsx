@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { notFound } from 'next/navigation';
-import { getJobById, getJobOffers } from '@/lib/data';
+import { getCachedJobById, getJobOffers } from '@/lib/data';
 import type { Metadata } from 'next';
 import { MobilePageHeader } from '@/components/layout/mobile-page-header';
 import { Briefcase } from 'lucide-react';
@@ -53,7 +53,7 @@ interface JobPostingJsonLd {
 }
 
 export async function generateMetadata({ params }: JobDetailPageProps): Promise<Metadata> {
-  const job = await getJobById(params.id);
+  const job = await getCachedJobById(params.id);
   const baseUrl = 'https://www.tawzifak.com';
   const siteThumbnail = 'https://i.postimg.cc/MH0BfvFB/og-image.jpg';
   
@@ -142,7 +142,7 @@ export async function generateMetadata({ params }: JobDetailPageProps): Promise<
 }
 
 export default async function JobDetailPage({ params }: JobDetailPageProps) {
-    const job = await getJobById(params.id);
+    const job = await getCachedJobById(params.id);
 
     if (!job || job.postType !== 'seeking_worker') {
         notFound();

@@ -1,80 +1,64 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { ImmigrationCard } from '@/components/immigration-card';
 import { ImmigrationFilters } from '@/components/immigration-filters';
-import type { ImmigrationPost } from '@/lib/types';
+import type { ImmigrationPost, FirestoreCursor } from '@/lib/types';
 import { useSearchParams } from 'next/navigation';
 import { getImmigrationPosts } from '@/lib/data';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 
 const ITEMS_PER_PAGE = 16;
-const CACHE_KEY_PREFIX = 'immigration_cache_';
 
 export function PageContent() {
   const searchParams = useSearchParams();
   const [posts, setPosts] = useState<ImmigrationPost[]>([]);
+  
+  const [lastDoc, setLastDoc] = useState<FirestoreCursor>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [page, setPage] = useState(1);
 
   const q = searchParams.get('q');
 
-  const getCacheKey = useCallback(() => {
-    return `${CACHE_KEY_PREFIX}${q || ''}`;
+  useEffect(() => {
+    setPosts([]);
+    setLastDoc(null);
+    setHasMore(true);
+    setLoading(true);
+    fetchPosts(null, true);
   }, [q]);
 
-  const fetchAndSetPosts = useCallback(async (pageNum: number, reset: boolean) => {
-    if(pageNum === 1) setLoading(true); else setLoadingMore(true);
-
-    const { data: newPosts, totalCount } = await getImmigrationPosts({
-      searchQuery: q || undefined,
-      page: pageNum,
-      limit: ITEMS_PER_PAGE,
-    });
-
-    setPosts(prev => {
-        const updatedPosts = reset ? newPosts : [...prev, ...newPosts];
-        try {
-            sessionStorage.setItem(getCacheKey(), JSON.stringify({
-                items: updatedPosts,
-                page: pageNum,
-                hasMore: (pageNum * ITEMS_PER_PAGE) < totalCount
-            }));
-        } catch (e) { console.error("Failed to save to sessionStorage", e); }
-        return updatedPosts;
-    });
-    setHasMore((pageNum * ITEMS_PER_PAGE) < totalCount);
-
-    if(pageNum === 1) setLoading(false); else setLoadingMore(false);
-  }, [q, getCacheKey]);
-
-  useEffect(() => {
-    const cacheKey = getCacheKey();
+  const fetchPosts = async (cursor: FirestoreCursor, isReset: boolean) => {
     try {
-        const cachedData = sessionStorage.getItem(cacheKey);
-        if (cachedData) {
-            const { items, page: cachedPage, hasMore: cachedHasMore } = JSON.parse(cachedData);
-            setPosts(items);
-            setPage(cachedPage);
-            setHasMore(cachedHasMore);
-            setLoading(false);
-            return;
-        }
-    } catch(e) { console.error("Failed to read from sessionStorage", e); }
+      const { data: newPosts, lastDoc: nextCursor } = await getImmigrationPosts({
+        searchQuery: q || undefined,
+        limit: ITEMS_PER_PAGE,
+        lastDoc: cursor
+      });
 
-    setPosts([]);
-    setPage(1);
-    setHasMore(true);
-    fetchAndSetPosts(1, true);
-  }, [q, fetchAndSetPosts, getCacheKey]);
+      if (isReset) {
+        setPosts(newPosts);
+      } else {
+        setPosts(prev => [...prev, ...newPosts]);
+      }
+
+      setLastDoc(nextCursor);
+      setHasMore(newPosts.length === ITEMS_PER_PAGE);
+
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  };
 
   const loadMore = () => {
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchAndSetPosts(nextPage, false);
+    if (!lastDoc) return;
+    setLoadingMore(true);
+    fetchPosts(lastDoc, false);
   };
 
   return (
@@ -86,9 +70,9 @@ export function PageContent() {
       </div>
 
       <div className="container pt-4 pb-6">
-        {loading ? (
+        {loading && posts.length === 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {Array.from({ length: 12 }).map((_, i) => (
+            {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="bg-muted rounded-lg h-48 animate-pulse" />
             ))}
           </div>
@@ -118,4 +102,4 @@ export function PageContent() {
       </div>
     </>
   );
-          }
+}

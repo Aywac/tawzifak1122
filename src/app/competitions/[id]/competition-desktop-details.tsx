@@ -3,8 +3,8 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
-  CalendarDays, Briefcase, Building, Users2, FileText, Link as LinkIcon, Landmark,
-  ClipboardList, Info, MapPin, Target, ListOrdered, FileUp, Award, Bookmark, Share2, Mail, HelpCircle
+  CalendarDays, Briefcase, Building, Users2, FileText, Link as LinkIcon,
+  ClipboardList, Info, MapPin, Target, ListOrdered, FileUp, Award, Bookmark, Mail, HelpCircle
 } from 'lucide-react';
 import type { Competition } from '@/lib/types';
 import { CategoryIcon } from '@/components/icons';
@@ -15,6 +15,7 @@ import { ShareButton } from '@/app/jobs/[id]/share-button';
 import { getOrganizerByName } from '@/lib/data';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { TimeAgo } from '@/components/ui/time-ago';
 
 const InfoItem = ({ icon: Icon, label, value, color, href, isDate }: { icon: React.ElementType; label: string; value: string | number | undefined | null; color?: string; href?: string; isDate?: boolean }) => {
     if (!value) return null;
@@ -130,7 +131,9 @@ export function CompetitionDesktopDetails({ competition, similarCompetitions }: 
                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground text-sm">
                                     <div className="flex items-center gap-1.5">
                                         <CalendarDays className="h-4 w-4" />
-                                        <span>نُشرت: {competition.postedAt}</span>
+                                        <span>
+                                            نُشرت: <TimeAgo date={competition.createdAtISO || new Date().toISOString()} initialText={competition.postedAt} />
+                                        </span>
                                     </div>
                                 </div>
                             </div>

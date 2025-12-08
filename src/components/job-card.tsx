@@ -5,15 +5,15 @@ import Link from 'next/link';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Clock, Wallet, User as UserIcon, Briefcase, CalendarDays, ArrowRight, LayoutGrid } from 'lucide-react';
-import type { Job, WorkType } from '@/lib/types';
+import { MapPin, Wallet, User as UserIcon } from 'lucide-react';
+import type { Job } from '@/lib/types';
 import { getCategoryById } from '@/lib/data';
 import { CategoryIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from './ui/separator';
 import { UserAvatar } from './user-avatar';
-import Image from 'next/image';
+import { TimeAgo } from '@/components/ui/time-ago';
 
 interface JobCardProps {
   job: Job | null;
@@ -156,7 +156,9 @@ export function JobCard({ job }: JobCardProps) {
       </CardContent>
 
       <CardFooter className="p-4 pt-0 mt-auto flex items-center justify-between">
-         <span className="text-xs text-muted-foreground">{job.postedAt}</span>
+        <span className="text-xs text-muted-foreground">
+          <TimeAgo date={job.createdAtISO || new Date().toISOString()} initialText={job.postedAt} />
+        </span>
         <Button asChild size="sm" variant="secondary" className="text-sm rounded-lg active:scale-95 transition-transform text-secondary-foreground hover:bg-secondary/80">
           <Link href={detailUrl}>{isSeekingJob ? 'عرض الملف' : 'عرض التفاصيل'}</Link>
         </Button>

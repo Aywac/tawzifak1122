@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -15,8 +15,8 @@ import { postJob, updateAd } from '@/lib/data';
 import { useAuth } from '@/context/auth-context';
 import { useRouter } from 'next/navigation';
 import { 
-  Loader2, Briefcase, Users, FileText, FileSignature, 
-  LayoutGrid, Globe, MapPin, Wallet, Phone, MessageSquare, Mail,
+  Loader2, Briefcase, FileText, FileSignature, 
+  LayoutGrid, MapPin, Wallet, Phone, MessageSquare, Mail,
   Building2, Award, Users2 as Users2Icon, Info, Instagram, GraduationCap, Link as LinkIcon,
   ClipboardList, ArrowLeft, ArrowRight, Check, HelpCircle, Target, Image as ImageIcon, Clock, CheckSquare, X
 } from 'lucide-react';
@@ -25,6 +25,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { UserAvatar } from '@/components/user-avatar';
+import { uploadToCloudinary } from '@/lib/cloudinary';
 
 const MAX_IMAGE_SIZE_MB = 2;
 const MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024;
@@ -381,17 +382,19 @@ export function PostJobForm({ categories, job, preselectedType }: PostJobFormPro
         try {
             // قص الصورة تلقائياً إلى 300x300 بكسل
             const croppedImage = await getCroppedImg(imageSrc, { x: 0, y: 0, width: 300, height: 300 });
-            form.setValue('ownerPhotoURL', croppedImage, { shouldValidate: true, shouldDirty: true });
+            toast({ title: "جاري رفع الصورة...", description: "يرجى الانتظار قليلاً." });
+            const secureUrl = await uploadToCloudinary(croppedImage);
+            form.setValue('ownerPhotoURL', secureUrl, { shouldValidate: true, shouldDirty: true });
             toast({
                 title: "تم تحميل الصورة بنجاح",
                 description: "تم قص الصورة تلقائياً للحفاظ على التناسب.",
             });
         } catch (error) {
-            console.error('Error cropping image:', error);
+            console.error('Error handling image:', error);
             toast({
                 variant: "destructive",
-                title: "فشل في معالجة الصورة",
-                description: "حدث خطأ أثناء معالجة الصورة."
+                title: "فشل في رفع الصورة",
+                description: "حدث خطأ أثناء الاتصال بالخادم."
             });
         }
     });

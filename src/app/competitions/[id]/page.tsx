@@ -1,6 +1,6 @@
 import React from 'react';
 import { notFound } from 'next/navigation';
-import { getCompetitionById, getCompetitions } from '@/lib/data';
+import { getCachedCompetitionById, getCompetitions } from '@/lib/data';
 import type { Metadata } from 'next';
 import { MobilePageHeader } from '@/components/layout/mobile-page-header';
 import { Landmark } from 'lucide-react';
@@ -37,7 +37,7 @@ interface JobPostingJsonLd {
 }
 
 export async function generateMetadata({ params }: CompetitionDetailPageProps): Promise<Metadata> {
-  const competition = await getCompetitionById(params.id);
+  const competition = await getCachedCompetitionById(params.id);
   const baseUrl = 'https://www.tawzifak.com';
   const siteThumbnail = 'https://i.postimg.cc/MH0BfvFB/og-image.jpg';
   
@@ -116,7 +116,7 @@ export async function generateMetadata({ params }: CompetitionDetailPageProps): 
 }
 
 export default async function CompetitionDetailPage({ params }: CompetitionDetailPageProps) {
-    const competition = await getCompetitionById(params.id);
+    const competition = await getCachedCompetitionById(params.id);
 
     if (!competition) {
         notFound();

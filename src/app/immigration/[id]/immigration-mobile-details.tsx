@@ -3,9 +3,9 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
-  CalendarDays, Target, FileText, Link as LinkIcon, Plane, ClipboardList, Info, MapPin,
+  CalendarDays, Target, Link as LinkIcon, ClipboardList, Info, MapPin,
   GraduationCap, Briefcase, Users, Award, Wallet, HelpCircle, Mail, MessageSquare,
-  Instagram, Phone, Bookmark, Share2, CheckSquare, LayoutGrid
+  Instagram, Phone, Bookmark, CheckSquare, LayoutGrid
 } from 'lucide-react';
 import type { ImmigrationPost } from '@/lib/types';
 import { Separator } from '@/components/ui/separator';
@@ -15,6 +15,7 @@ import { ImmigrationCard } from '@/components/immigration-card';
 import { CategoryIcon } from '@/components/icons';
 import { getProgramTypeDetails, cn } from '@/lib/utils';
 import { ShareButton } from '@/app/jobs/[id]/share-button';
+import { TimeAgo } from '@/components/ui/time-ago';
 
 const InfoItem = ({ icon: Icon, label, value, color }: { icon: React.ElementType; label: string; value: string | number | undefined; color?: string }) => {
     if (!value) return null;
@@ -127,7 +128,9 @@ export function ImmigrationMobileDetails({ post, similarPosts }: ImmigrationMobi
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground text-sm pt-2">
                         <div className="flex items-center gap-1.5">
                             <CalendarDays className="h-4 w-4" />
-                            <span>نُشرت: {post.postedAt}</span>
+                            <span>
+                                نُشرت: <TimeAgo date={post.createdAtISO || new Date().toISOString()} initialText={post.postedAt} />
+                            </span>
                         </div>
                     </div>
                 </CardHeader>

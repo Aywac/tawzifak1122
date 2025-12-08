@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plane, Calendar, MapPin, ArrowRight, Wallet, Briefcase, Users } from 'lucide-react';
+import { MapPin, Wallet, Users } from 'lucide-react';
 import type { ImmigrationPost } from '@/lib/types';
 import { cn, getProgramTypeDetails } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CategoryIcon } from './icons';
 import { Separator } from './ui/separator';
+import { TimeAgo } from '@/components/ui/time-ago';
 
 interface ImmigrationCardProps {
   post: ImmigrationPost | null;
@@ -83,7 +84,9 @@ export function ImmigrationCard({ post }: ImmigrationCardProps) {
       </CardContent>
 
       <CardFooter className="p-4 pt-0 mt-auto bg-card flex items-center justify-between">
-         <span className="text-xs text-muted-foreground">{post.postedAt}</span>
+        <span className="text-xs text-muted-foreground">
+          <TimeAgo date={post.createdAtISO || new Date().toISOString()} initialText={post.postedAt} />
+        </span>
          <Button asChild size="sm" variant="secondary" className="text-sm rounded-lg active:scale-95 transition-transform text-secondary-foreground hover:bg-secondary/80">
           <Link href={detailUrl}>
             عرض التفاصيل

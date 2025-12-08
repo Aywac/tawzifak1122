@@ -1,8 +1,9 @@
 import { db, auth } from '@/lib/firebase';
-import { collection, getDocs, getDoc, doc, query, where, orderBy, limit, addDoc, serverTimestamp, updateDoc, deleteDoc, setDoc, Query, and, QueryConstraint, QueryFilterConstraint, documentId, increment } from 'firebase/firestore';
-import type { Job, Category, PostType, User, WorkType, Testimonial, Competition, Organizer, Article, Report, ContactMessage, ImmigrationPost } from './types';
+import { collection, getDocs, getDoc, doc, documentId, query, where, orderBy, limit, addDoc, serverTimestamp, updateDoc, deleteDoc, setDoc, QueryConstraint, startAfter, runTransaction, increment } from 'firebase/firestore';
+import type { FirestoreCursor, Job, Category, User, WorkType, Testimonial, Competition, Organizer, Article, Report, ContactMessage, ImmigrationPost, PaginatedResponse } from './types';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import Fuse from 'fuse.js';
-import { getProgramTypeDetails, slugify } from './utils';
+import { getProgramTypeDetails } from './utils';
 import { revalidatePath } from './revalidate';
 import { updateProfile } from 'firebase/auth';
 
@@ -73,6 +74,63 @@ function formatTimeAgo(timestamp: any) {
   return 'الآن';
 }
 
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const result: T[][] = [];
+
+  for (let i = 0; i < array.length; i += size) {
+    result.push(array.slice(i, i + size));
+  }
+
+  return result;
+}
+
+function mapSnapshotToJobs(snapshot: any): Job[] {
+  return snapshot.docs.map((doc: any) => {
+    const data = doc.data();
+    const createdAtDate = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+
+    return {
+      id: doc.id,
+      ...data,
+      postedAt: formatTimeAgo(data.createdAt),
+      createdAtISO: createdAtDate.toISOString(),
+      isNew: (new Date().getTime() - createdAtDate.getTime()) < 24 * 60 * 60 * 1000,
+    } as Job;
+  });
+}
+
+function mapSnapshotToCompetitions(snapshot: any): Competition[] {
+  return snapshot.docs.map((doc: any) => {
+    const data = doc.data();
+    const createdAtDate = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+
+    return {
+      id: doc.id,
+      ...data,
+      postedAt: formatTimeAgo(data.createdAt),
+      createdAtISO: createdAtDate.toISOString(),
+      isNew: (new Date().getTime() - createdAtDate.getTime()) < 24 * 60 * 60 * 1000,
+    } as Competition;
+  });
+}
+
+function mapSnapshotToImmigrationPosts(snapshot: any): ImmigrationPost[] {
+  return snapshot.docs.map((doc: any) => {
+    const data = doc.data();
+    const createdAtDate = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+    const programDetails = getProgramTypeDetails(data.programType);
+    
+    return {
+      id: doc.id,
+      ...data,
+      iconName: programDetails.icon,
+      postedAt: formatTimeAgo(data.createdAt),
+      createdAtISO: createdAtDate.toISOString(),
+      isNew: (new Date().getTime() - createdAtDate.getTime()) < 24 * 60 * 60 * 1000,
+    } as ImmigrationPost;
+  });
+}
+
 async function getJobOffers(
   options: {
     count?: number;
@@ -82,60 +140,82 @@ async function getJobOffers(
     categoryId?: string;
     workType?: WorkType;
     excludeId?: string;
-    page?: number;
     limit?: number;
+    lastDoc?: FirestoreCursor;
   } = {}
-): Promise<{ data: Job[]; totalCount: number }> {
+): Promise<PaginatedResponse<Job>> {
   try {
-    const { count, searchQuery, excludeId, page = 1, limit: pageLimit } = options;
+    const { count, searchQuery, country, city, categoryId, workType, excludeId, lastDoc, limit: pageLimit = 16  } = options;
     const adsRef = collection(db, 'ads');
-    
-    const constraints: QueryConstraint[] = [where('postType', '==', 'seeking_worker'), orderBy('createdAt', 'desc')];
-    const q = query(adsRef, ...constraints);
-    
-    const querySnapshot = await getDocs(q);
-    
-    let allJobs: Job[] = querySnapshot.docs.map(doc => {
-      const data = doc.data();
-      const createdAt = data.createdAt.toDate();
-      return {
-        id: doc.id,
-        ...data,
-        postedAt: formatTimeAgo(data.createdAt),
-        isNew: (new Date().getTime() - createdAt.getTime()) < 24 * 60 * 60 * 1000,
-      } as Job;
-    });
 
     if (searchQuery) {
-        const fuse = new Fuse(allJobs, {
-            keys: ['title', 'description', 'categoryName', 'country', 'city', 'companyName'],
-            includeScore: true,
-            threshold: 0.4,
-        });
-        allJobs = fuse.search(searchQuery).map(result => result.item);
+      const constraints: QueryConstraint[] = [
+        where('postType', '==', 'seeking_worker'), 
+        orderBy('createdAt', 'desc')
+      ];
+      const q = query(adsRef, ...constraints);
+      const querySnapshot = await getDocs(q);
+
+      let allJobs = mapSnapshotToJobs(querySnapshot);
+
+      const fuse = new Fuse(allJobs, {
+        keys: ['title', 'description', 'categoryName', 'country', 'city', 'companyName'],
+        includeScore: true,
+        threshold: 0.4,
+      });
+      allJobs = fuse.search(searchQuery).map(result => result.item);
+
+      if (country) allJobs = allJobs.filter(j => j.country === country);
+      if (city) allJobs = allJobs.filter(j => j.city === city);
+      if (categoryId) allJobs = allJobs.filter(j => j.categoryId === categoryId);
+      if (workType) allJobs = allJobs.filter(j => j.workType === workType);
+      if (excludeId) allJobs = allJobs.filter(j => j.id !== excludeId);
+
+      const data = count ? allJobs.slice(0, count) : allJobs.slice(0, pageLimit);
+      
+      return { 
+        data, 
+        totalCount: allJobs.length, 
+        lastDoc: null
+      };
     }
+
+    let constraints: QueryConstraint[] = [
+      where('postType', '==', 'seeking_worker'),
+      orderBy('createdAt', 'desc')
+    ];
+
+    if (country) constraints.push(where('country', '==', country));
+    if (city) constraints.push(where('city', '==', city));
+    if (categoryId) constraints.push(where('categoryId', '==', categoryId));
+    if (workType) constraints.push(where('workType', '==', workType));
     
+    if (lastDoc) {
+      constraints.push(startAfter(lastDoc));
+    }
+
+    const fetchLimit = count || pageLimit;
+    constraints.push(limit(fetchLimit));
+
+    const q = query(adsRef, ...constraints);
+    const querySnapshot = await getDocs(q);
+
+    const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+
+    let jobs = mapSnapshotToJobs(querySnapshot);
+
     if (excludeId) {
-        allJobs = allJobs.filter(job => job.id !== excludeId);
+      jobs = jobs.filter(j => j.id !== excludeId);
     }
 
-    const totalCount = allJobs.length;
-
-    let data;
-    if (pageLimit) {
-      const startIndex = (page - 1) * pageLimit;
-      const endIndex = startIndex + pageLimit;
-      data = allJobs.slice(startIndex, endIndex);
-    } else if (count) {
-      data = allJobs.slice(0, count);
-    } else {
-      data = allJobs;
-    }
-    
-    return { data, totalCount };
+    return { 
+      data: jobs, 
+      totalCount: undefined,
+      lastDoc: lastVisible 
+    };
   } catch (error) {
     console.error("Error fetching job offers: ", error);
-    return { data: [], totalCount: 0 };
+    return { data: [], totalCount: 0, lastDoc: null };
   }
 }
 
@@ -148,60 +228,94 @@ async function getJobSeekers(
     categoryId?: string;
     workType?: WorkType;
     excludeId?: string;
-    page?: number;
     limit?: number;
+    lastDoc?: FirestoreCursor;
   } = {}
-): Promise<{ data: Job[]; totalCount: number }> {
+): Promise<PaginatedResponse<Job>> {
   try {
-    const { count, searchQuery, excludeId, page = 1, limit: pageLimit } = options;
+    const { 
+      count, 
+      searchQuery, 
+      country, 
+      city, 
+      categoryId, 
+      workType, 
+      excludeId, 
+      lastDoc,
+      limit: pageLimit = 16 
+    } = options;
+
     const adsRef = collection(db, 'ads');
-    
-    const constraints: QueryConstraint[] = [where('postType', '==', 'seeking_job'), orderBy('createdAt', 'desc')];
-    const q = query(adsRef, ...constraints);
-    
-    const querySnapshot = await getDocs(q);
-    
-    let allJobs: Job[] = querySnapshot.docs.map(doc => {
-      const data = doc.data();
-      const createdAt = data.createdAt.toDate();
-      return {
-        id: doc.id,
-        ...data,
-        postedAt: formatTimeAgo(data.createdAt),
-        isNew: (new Date().getTime() - createdAt.getTime()) < 24 * 60 * 60 * 1000,
-      } as Job;
-    });
 
     if (searchQuery) {
-        const fuse = new Fuse(allJobs, {
-            keys: ['title', 'description', 'categoryName', 'country', 'city'],
-            includeScore: true,
-            threshold: 0.4,
-        });
-        allJobs = fuse.search(searchQuery).map(result => result.item);
+      const constraints: QueryConstraint[] = [
+        where('postType', '==', 'seeking_job'), 
+        orderBy('createdAt', 'desc')
+      ];
+      const q = query(adsRef, ...constraints);
+      const querySnapshot = await getDocs(q);
+
+      let allJobs = mapSnapshotToJobs(querySnapshot);
+
+      const fuse = new Fuse(allJobs, {
+        keys: ['title', 'description', 'categoryName', 'country', 'city'],
+        includeScore: true,
+        threshold: 0.4,
+      });
+      allJobs = fuse.search(searchQuery).map(result => result.item);
+
+      if (country) allJobs = allJobs.filter(j => j.country === country);
+      if (city) allJobs = allJobs.filter(j => j.city === city);
+      if (categoryId) allJobs = allJobs.filter(j => j.categoryId === categoryId);
+      if (workType) allJobs = allJobs.filter(j => j.workType === workType);
+      if (excludeId) allJobs = allJobs.filter(j => j.id !== excludeId);
+
+      const data = count ? allJobs.slice(0, count) : allJobs.slice(0, pageLimit);
+      
+      return { 
+        data, 
+        totalCount: allJobs.length, 
+        lastDoc: null 
+      };
     }
     
+    let constraints: QueryConstraint[] = [
+      where('postType', '==', 'seeking_job'),
+      orderBy('createdAt', 'desc')
+    ];
+
+    if (country) constraints.push(where('country', '==', country));
+    if (city) constraints.push(where('city', '==', city));
+    if (categoryId) constraints.push(where('categoryId', '==', categoryId));
+    if (workType) constraints.push(where('workType', '==', workType));
+    
+    if (lastDoc) {
+      constraints.push(startAfter(lastDoc));
+    }
+
+    const fetchLimit = count || pageLimit;
+    constraints.push(limit(fetchLimit));
+
+    const q = query(adsRef, ...constraints);
+    const querySnapshot = await getDocs(q);
+
+    const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+
+    let jobs = mapSnapshotToJobs(querySnapshot);
+
     if (excludeId) {
-        allJobs = allJobs.filter(job => job.id !== excludeId);
+      jobs = jobs.filter(j => j.id !== excludeId);
     }
 
-    const totalCount = allJobs.length;
+    return { 
+      data: jobs, 
+      totalCount: undefined, 
+      lastDoc: lastVisible 
+    };
 
-    let data;
-    if (pageLimit) {
-      const startIndex = (page - 1) * pageLimit;
-      const endIndex = startIndex + pageLimit;
-      data = allJobs.slice(startIndex, endIndex);
-    } else if (count) {
-      data = allJobs.slice(0, count);
-    } else {
-      data = allJobs;
-    }
-    
-    return { data, totalCount };
   } catch (error) {
     console.error("Error fetching job seekers: ", error);
-    return { data: [], totalCount: 0 };
+    return { data: [], totalCount: 0, lastDoc: null };
   }
 }
 
@@ -235,10 +349,12 @@ export async function getJobById(id: string): Promise<Job | null> {
 
     if (docSnap.exists()) {
       const data = docSnap.data();
+      const createdAtDate = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
       return {
         id: docSnap.id,
         ...data,
         postedAt: formatTimeAgo(data.createdAt),
+        createdAtISO: createdAtDate.toISOString(),
       } as Job;
     } else {
       console.log("No such document!");
@@ -249,7 +365,7 @@ export async function getJobById(id: string): Promise<Job | null> {
     console.error("Error fetching job by ID: ", error);
     return null;
   }
-    }
+}
 
 export async function getUserById(id: string): Promise<User | null> {
   try {
@@ -269,48 +385,49 @@ export async function getUserById(id: string): Promise<User | null> {
 }
 
 export async function postJob(jobData: Omit<Job, 'id' | 'createdAt' | 'likes' | 'rating' | 'postedAt' | 'isNew'>): Promise<{ id: string }> {
-    try {
-        const adsCollection = collection(db, 'ads');
-        const newJob: { [key: string]: any } = {
-            ...jobData,
-            createdAt: serverTimestamp(),
-            likes: 0,
-        };
-        
-        Object.keys(newJob).forEach(key => {
-            if (newJob[key] === undefined || newJob[key] === '') {
-                delete newJob[key];
-            }
-        });
-        
-        if (newJob.ownerPhotoURL === undefined) {
-             newJob.ownerPhotoURL = null;
-        }
+  try {
+    const newJob: { [key: string]: any } = {
+      ...jobData,
+      createdAt: serverTimestamp(),
+      likes: 0,
+    };
+      
+    Object.keys(newJob).forEach(key => (newJob[key] === undefined || newJob[key] === '') && delete newJob[key]);
+    if (newJob.ownerPhotoURL === undefined) newJob.ownerPhotoURL = null;
 
-        const newDocRef = await addDoc(adsCollection, newJob);
-        
-        if (auth.currentUser && newJob.ownerPhotoURL && newJob.ownerPhotoURL.startsWith('data:image')) {
-            const updateData: { displayName?: string; photoURL?: string | null } = { photoURL: newJob.ownerPhotoURL };
-            if (jobData.ownerName) {
-                updateData.displayName = jobData.ownerName;
-            }
-             try {
-                await updateProfile(auth.currentUser, updateData);
-             } catch (e: any) {
-                if (e.code !== 'auth/invalid-profile-attribute') {
-                    throw e;
-                }
-             }
+    const newDocRef = doc(collection(db, 'ads'));
+    const statsRef = doc(db, 'stats', 'general');
+
+    await runTransaction(db, async (transaction) => {
+      transaction.set(newDocRef, newJob);
+      const counterField = jobData.postType === 'seeking_worker' ? 'jobs' : 'seekers';
+      transaction.update(statsRef, { [counterField]: increment(1) });
+    });
+
+    if (auth.currentUser && newJob.ownerPhotoURL && !newJob.ownerPhotoURL.startsWith('data:image')) {
+      try {
+        if (auth.currentUser.photoURL !== newJob.ownerPhotoURL || (jobData.ownerName && auth.currentUser.displayName !== jobData.ownerName)) {
+          await updateProfile(auth.currentUser, {
+            photoURL: newJob.ownerPhotoURL,
+            displayName: jobData.ownerName || auth.currentUser.displayName
+          });
         }
-        
-        revalidatePath('/');
-        revalidatePath(jobData.postType === 'seeking_job' ? '/workers' : '/jobs');
-        
-        return { id: newDocRef.id };
-    } catch (e) {
-        console.error("Error adding document: ", e);
-        throw new Error("Failed to post job");
+      } catch (e) {
+        console.error("Failed to sync user profile photo", e);
+      }
     }
+
+    revalidateTag('stats');
+    revalidateTag('jobs-home');
+    revalidateTag('seekers-home');
+    revalidatePath('/');
+    revalidatePath(jobData.postType === 'seeking_job' ? '/workers' : '/jobs');
+
+    return { id: newDocRef.id };
+  } catch (e) {
+    console.error("Error adding document: ", e);
+    throw new Error("Failed to post job");
+  }
 }
 
 export async function updateAd(adId: string, adData: Partial<Job>) {
@@ -334,6 +451,7 @@ export async function updateAd(adId: string, adData: Partial<Job>) {
 
         await updateDoc(adRef, dataToUpdate);
 
+        revalidateTag(`job-${adId}`);
         revalidatePath('/');
         revalidatePath('/jobs');
         revalidatePath('/workers');
@@ -347,16 +465,32 @@ export async function updateAd(adId: string, adData: Partial<Job>) {
 }
 
 export async function deleteAd(adId: string) {
-    try {
-        await deleteDoc(doc(db, 'ads', adId));
+  try {
+    const adRef = doc(db, 'ads', adId);
+    const statsRef = doc(db, 'stats', 'general');
 
-        revalidatePath('/');
-        revalidatePath('/jobs');
-        revalidatePath('/workers');
-    } catch (e) {
-        console.error("Error deleting ad: ", e);
-        throw new Error("Failed to delete ad");
-    }
+    await runTransaction(db, async (transaction) => {
+      const adSnap = await transaction.get(adRef);
+      if (!adSnap.exists()) throw "Document does not exist!";
+      
+      const type = adSnap.data().postType;
+      const counterField = type === 'seeking_worker' ? 'jobs' : 'seekers';
+
+      transaction.delete(adRef);
+      transaction.update(statsRef, { [counterField]: increment(-1) });
+    });
+
+    revalidateTag(`job-${adId}`);
+    revalidateTag('stats');
+    revalidateTag('jobs-home');
+    revalidateTag('seekers-home');
+    revalidatePath('/');
+    revalidatePath('/jobs');
+    revalidatePath('/workers');
+  } catch (e) {
+    console.error("Error deleting ad: ", e);
+    throw new Error("Failed to delete ad");
+  }
 }
 
 export async function updateUserProfile(uid: string, profileData: Partial<User>) {
@@ -413,6 +547,7 @@ export async function addTestimonial(testimonialData: Omit<Testimonial, 'id' | '
         };
         const newDocRef = await addDoc(reviewsCollection, dataToSave);
         
+        revalidateTag('testimonials');
         revalidatePath('/');
         revalidatePath('/testimonials');
         
@@ -423,28 +558,57 @@ export async function addTestimonial(testimonialData: Omit<Testimonial, 'id' | '
     }
 }
 
-export async function getTestimonials(): Promise<Testimonial[]> {
-    try {
-        const reviewsRef = collection(db, 'reviews');
-        const q = query(reviewsRef, orderBy('createdAt', 'desc'));
-        const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-                id: doc.id,
-                ...data,
-                postedAt: formatTimeAgo(data.createdAt),
-            } as Testimonial;
-        });
-    } catch (error) {
-        console.error("Error fetching testimonials: ", error);
-        return [];
+export async function getTestimonials(
+  options: { 
+    limit?: number; 
+    lastDoc?: FirestoreCursor; 
+  } = {}
+): Promise<PaginatedResponse<Testimonial>> {
+  try {
+    const { limit: pageLimit = 8, lastDoc } = options;
+    const reviewsRef = collection(db, 'reviews');
+    
+    let constraints: QueryConstraint[] = [
+      orderBy('createdAt', 'desc')
+    ];
+
+    if (lastDoc) {
+      constraints.push(startAfter(lastDoc));
     }
+
+    constraints.push(limit(pageLimit));
+
+    const q = query(reviewsRef, ...constraints);
+    const querySnapshot = await getDocs(q);
+    
+    const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+
+    const data = querySnapshot.docs.map(doc => {
+      const data = doc.data();
+      const createdAtDate = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+      
+      return {
+        id: doc.id,
+        ...data,
+        postedAt: formatTimeAgo(data.createdAt),
+        createdAtISO: createdAtDate.toISOString(),
+      } as Testimonial;
+    });
+
+    return { data, lastDoc: lastVisible };
+  } catch (error) {
+    console.error("Error fetching testimonials: ", error);
+    return { data: [], lastDoc: null };
+  }
 }
 
 export async function deleteTestimonial(testimonialId: string) {
     try {
         await deleteDoc(doc(db, 'reviews', testimonialId));
+
+        revalidateTag('testimonials');
+        revalidatePath('/');
+        revalidatePath('/testimonials');
     } catch (e) {
         console.error("Error deleting testimonial: ", e);
         throw new Error("Failed to delete testimonial");
@@ -453,24 +617,22 @@ export async function deleteTestimonial(testimonialId: string) {
 
 export async function postCompetition(competitionData: Omit<Competition, 'id' | 'createdAt' | 'postedAt'>): Promise<{ id: string }> {
   try {
-    const competitionsCollection = collection(db, 'competitions');
-    const newCompetition: { [key: string]: any } = {
-        ...competitionData,
-        createdAt: serverTimestamp(),
-        positionsAvailable: competitionData.positionsAvailable === undefined ? null : competitionData.positionsAvailable,
-    };
+    const newDocRef = doc(collection(db, 'competitions'));
+    const statsRef = doc(db, 'stats', 'general');
     
-    Object.keys(newCompetition).forEach(key => {
-        if (newCompetition[key] === undefined || newCompetition[key] === '') {
-             delete newCompetition[key];
-        }
+    const newCompetition: any = { ...competitionData, createdAt: serverTimestamp(), positionsAvailable: competitionData.positionsAvailable ?? null };
+    Object.keys(newCompetition).forEach(key => (newCompetition[key] === undefined || newCompetition[key] === '') && delete newCompetition[key]);
+
+    await runTransaction(db, async (transaction) => {
+      transaction.set(newDocRef, newCompetition);
+      transaction.update(statsRef, { competitions: increment(1) });
     });
 
-    const newDocRef = await addDoc(competitionsCollection, newCompetition);
-    
+    revalidateTag('stats');
+    revalidateTag('competitions-home');
     revalidatePath('/');
     revalidatePath('/competitions');
-    
+
     return { id: newDocRef.id };
   } catch (e) {
     console.error("Error adding competition: ", e);
@@ -478,73 +640,96 @@ export async function postCompetition(competitionData: Omit<Competition, 'id' | 
   }
 }
 
-export async function getCompetitions(options: { 
-  count?: number;
-  searchQuery?: string;
-  location?: string;
-  excludeId?: string;
-  page?: number;
-  limit?: number;
-} = {}): Promise<{ data: Competition[]; totalCount: number }> {
+export async function getCompetitions(
+  options: {
+    count?: number;
+    searchQuery?: string;
+    location?: string;
+    excludeId?: string;
+    limit?: number;
+    lastDoc?: FirestoreCursor;
+  } = {}
+): Promise<PaginatedResponse<Competition>> {
   try {
-    const { count, searchQuery, location, excludeId, page = 1, limit: pageLimit } = options;
-    const competitionsRef = collection(db, 'competitions');
+    const { 
+      count, 
+      searchQuery, 
+      location, 
+      excludeId, 
+      lastDoc, 
+      limit: pageLimit = 16 
+    } = options;
     
-    const q = query(competitionsRef);
-    const querySnapshot = await getDocs(q);
+    const competitionsRef = collection(db, 'competitions');
 
-    let competitions = querySnapshot.docs.map(doc => {
-      const data = doc.data();
-      const createdAt = data.createdAt.toDate();
-      return {
-        id: doc.id,
-        ...data,
-        postedAt: formatTimeAgo(data.createdAt),
-        isNew: (new Date().getTime() - createdAt.getTime()) < 24 * 60 * 60 * 1000,
-      } as Competition;
-    });
+    if (searchQuery || location) {
+      const q = query(competitionsRef, orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
 
-    if (excludeId) {
-      competitions = competitions.filter(comp => comp.id !== excludeId);
-    }
+      let competitions = mapSnapshotToCompetitions(querySnapshot);
 
-    if (searchQuery) {
+      if (excludeId) {
+        competitions = competitions.filter(comp => comp.id !== excludeId);
+      }
+
+      if (searchQuery) {
         const fuse = new Fuse(competitions, {
             keys: ['title', 'organizer', 'description', 'location', 'competitionType'],
             includeScore: true,
             threshold: 0.4,
         });
         competitions = fuse.search(searchQuery).map(result => result.item);
-    }
-    
-    if (location) {
-        const fuse = new Fuse(competitions, {
-            keys: ['location'],
-            includeScore: true,
-            threshold: 0.3,
-        });
-        competitions = fuse.search(location).map(result => result.item);
-    }
-    
-    competitions.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+      }
 
-    const totalCount = competitions.length;
+      if (location) {
+          const fuse = new Fuse(competitions, {
+              keys: ['location'],
+              includeScore: true,
+              threshold: 0.3,
+          });
+          competitions = fuse.search(location).map(result => result.item);
+      }
 
-    let data: Competition[];
-    if (pageLimit) {
-        const startIndex = (page - 1) * pageLimit;
-        const endIndex = startIndex + pageLimit;
-        data = competitions.slice(startIndex, endIndex);
-    } else if (count) {
-        data = competitions.slice(0, count);
-    } else {
-        data = competitions;
+      const data = count ? competitions.slice(0, count) : competitions.slice(0, pageLimit);
+
+      return { 
+        data, 
+        totalCount: competitions.length, 
+        lastDoc: null 
+      };
     }
+
+    const constraints: QueryConstraint[] = [
+      orderBy('createdAt', 'desc')
+    ];
+
+    if (lastDoc) {
+      constraints.push(startAfter(lastDoc));
+    }
+
+    const fetchLimit = count || pageLimit;
+    constraints.push(limit(fetchLimit));
+
+    const q = query(competitionsRef, ...constraints);
+    const querySnapshot = await getDocs(q);
     
-    return { data, totalCount };
+    const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+
+    let competitions = mapSnapshotToCompetitions(querySnapshot);
+
+    if (excludeId) {
+      competitions = competitions.filter(comp => comp.id !== excludeId);
+    }
+
+    return { 
+      data: competitions, 
+      totalCount: undefined, 
+      lastDoc: lastVisible 
+    };
+
   } catch (error) {
     console.error("Error fetching competitions: ", error);
-    return { data: [], totalCount: 0 };
+    return { data: [], totalCount: 0, lastDoc: null };
   }
 }
 
@@ -555,10 +740,12 @@ export async function getCompetitionById(id: string): Promise<Competition | null
 
     if (docSnap.exists()) {
       const data = docSnap.data();
+      const createdAtDate = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
       return { 
           id: docSnap.id, 
           ...data,
           postedAt: formatTimeAgo(data.createdAt),
+          createdAtISO: createdAtDate.toISOString(),
      } as Competition;
     } else {
       console.log("No such competition document!");
@@ -590,6 +777,7 @@ export async function updateCompetition(id: string, competitionData: Partial<Com
 
         await updateDoc(competitionRef, dataToUpdate);
 
+        revalidateTag(`comp-${id}`);
         revalidatePath('/');
         revalidatePath('/competitions');
         revalidatePath(`/competitions/${id}`);
@@ -600,75 +788,103 @@ export async function updateCompetition(id: string, competitionData: Partial<Com
 }
 
 export async function deleteCompetition(competitionId: string) {
-    try {
-        await deleteDoc(doc(db, 'competitions', competitionId));
-
-        revalidatePath('/');
-        revalidatePath('/competitions');
-    } catch (e) {
-        console.error("Error deleting competition: ", e);
-        throw new Error("Failed to delete competition");
-    }
-}
-
-export async function getImmigrationPosts(options: { 
-  count?: number;
-  searchQuery?: string;
-  excludeId?: string;
-  page?: number;
-  limit?: number;
-} = {}): Promise<{ data: ImmigrationPost[]; totalCount: number }> {
   try {
-    const { count, searchQuery, excludeId, page = 1, limit: pageLimit } = options;
-    const postsRef = collection(db, 'immigration');
-    
-    const q = query(postsRef);
-    const querySnapshot = await getDocs(q);
+    const compRef = doc(db, 'competitions', competitionId);
+    const statsRef = doc(db, 'stats', 'general');
 
-    let posts = querySnapshot.docs.map(doc => {
-      const data = doc.data();
-      const programDetails = getProgramTypeDetails(data.programType);
-      return {
-        id: doc.id,
-        ...data,
-        iconName: programDetails.icon,
-        postedAt: formatTimeAgo(data.createdAt),
-        isNew: (new Date().getTime() - data.createdAt.toDate().getTime()) < 24 * 60 * 60 * 1000,
-      } as ImmigrationPost;
+    await runTransaction(db, async (transaction) => {
+      transaction.delete(compRef);
+      transaction.update(statsRef, { competitions: increment(-1) });
     });
 
-    if (excludeId) {
-      posts = posts.filter(post => post.id !== excludeId);
-    }
+    revalidateTag(`comp-${competitionId}`);
+    revalidateTag('stats');
+    revalidateTag('competitions-home');
+    revalidatePath('/');
+    revalidatePath('/competitions');
+  } catch (e) {
+    console.error("Error deleting competition: ", e);
+    throw new Error("Failed to delete competition");
+  }
+}
+
+export async function getImmigrationPosts(
+  options: {
+    count?: number;
+    searchQuery?: string;
+    excludeId?: string;
+    limit?: number;
+    lastDoc?: FirestoreCursor;
+  } = {}
+): Promise<PaginatedResponse<ImmigrationPost>> {
+  try {
+    const { 
+      count, 
+      searchQuery, 
+      excludeId, 
+      lastDoc, 
+      limit: pageLimit = 16 
+    } = options;
+
+    const postsRef = collection(db, 'immigration');
 
     if (searchQuery) {
+      const q = query(postsRef, orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+
+      let posts = mapSnapshotToImmigrationPosts(querySnapshot);
+
+      if (excludeId) {
+        posts = posts.filter(post => post.id !== excludeId);
+      }
+
       const fuse = new Fuse(posts, {
         keys: ['title', 'targetCountry', 'city', 'description', 'targetAudience', 'programType'],
         includeScore: true,
         threshold: 0.4,
       });
       posts = fuse.search(searchQuery).map(result => result.item);
-    }
-    
-    posts.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
 
-    const totalCount = posts.length;
+      const data = count ? posts.slice(0, count) : posts.slice(0, pageLimit);
 
-    let data: ImmigrationPost[];
-    if (pageLimit) {
-        const startIndex = (page - 1) * pageLimit;
-        const endIndex = startIndex + pageLimit;
-        data = posts.slice(startIndex, endIndex);
-    } else if (count) {
-        data = posts.slice(0, count);
-    } else {
-        data = posts;
+      return { 
+        data, 
+        totalCount: posts.length, 
+        lastDoc: null 
+      };
     }
-    
-    return { data, totalCount };
+
+    const constraints: QueryConstraint[] = [
+      orderBy('createdAt', 'desc')
+    ];
+
+    if (lastDoc) {
+      constraints.push(startAfter(lastDoc));
+    }
+
+    const fetchLimit = count || pageLimit;
+    constraints.push(limit(fetchLimit));
+
+    const q = query(postsRef, ...constraints);
+    const querySnapshot = await getDocs(q);
+
+    const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+
+    let posts = mapSnapshotToImmigrationPosts(querySnapshot);
+
+    if (excludeId) {
+      posts = posts.filter(post => post.id !== excludeId);
+    }
+
+    return { 
+      data: posts, 
+      totalCount: undefined, 
+      lastDoc: lastVisible 
+    };
+
   } catch (error) {
     console.error("Error fetching immigration posts: ", error);
-    return { data: [], totalCount: 0 };
+    return { data: [], totalCount: 0, lastDoc: null };
   }
 }
 
@@ -702,11 +918,13 @@ export async function getImmigrationPostById(id: string): Promise<ImmigrationPos
     if (docSnap.exists()) {
       const data = docSnap.data();
       const programDetails = getProgramTypeDetails(data.programType);
+      const createdAtDate = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
       return { 
           id: docSnap.id, 
           ...data,
           iconName: programDetails.icon,
           postedAt: formatTimeAgo(data.createdAt),
+          createdAtISO: createdAtDate.toISOString(),
      } as ImmigrationPost;
     } else {
       return null;
@@ -719,23 +937,30 @@ export async function getImmigrationPostById(id: string): Promise<ImmigrationPos
 
 export async function postImmigration(postData: Omit<ImmigrationPost, 'id' | 'createdAt' | 'postedAt' | 'isNew' | 'iconName'>): Promise<{ id: string }> {
   try {
-    const postsCollection = collection(db, 'immigration');
     const newPost: { [key: string]: any } = {
-        ...postData,
-        createdAt: serverTimestamp(),
+      ...postData,
+      createdAt: serverTimestamp(),
     };
-    
+
     Object.keys(newPost).forEach(key => {
-        if (newPost[key] === undefined || newPost[key] === '') {
-             delete newPost[key];
-        }
+      if (newPost[key] === undefined || newPost[key] === '') {
+        delete newPost[key];
+      }
     });
 
-    const newDocRef = await addDoc(postsCollection, newPost);
+    const newDocRef = doc(collection(db, 'immigration'));
+    const statsRef = doc(db, 'stats', 'general');
 
+    await runTransaction(db, async (transaction) => {
+      transaction.set(newDocRef, newPost);
+      transaction.update(statsRef, { immigration: increment(1) });
+    });
+
+    revalidateTag('stats');
+    revalidateTag('immigration-home');
     revalidatePath('/');
     revalidatePath('/immigration');
-    
+
     return { id: newDocRef.id };
   } catch (e) {
     console.error("Error adding immigration post: ", e);
@@ -763,6 +988,7 @@ export async function updateImmigrationPost(id: string, postData: Partial<Immigr
         
         await updateDoc(postRef, dataToUpdate);
 
+        revalidateTag(`imm-${id}`);
         revalidatePath('/');
         revalidatePath('/immigration');
         revalidatePath(`/immigration/${id}`);
@@ -774,15 +1000,27 @@ export async function updateImmigrationPost(id: string, postData: Partial<Immigr
 }
 
 export async function deleteImmigrationPost(postId: string) {
-    try {
-        await deleteDoc(doc(db, 'immigration', postId));
+  try {
+    const postRef = doc(db, 'immigration', postId);
+    const statsRef = doc(db, 'stats', 'general');
 
-        revalidatePath('/');
-        revalidatePath('/immigration');
-    } catch (e) {
-        console.error("Error deleting immigration post: ", e);
-        throw new Error("Failed to delete immigration post");
-    }
+    await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(postRef);
+      if (!snap.exists()) throw "Document does not exist!";
+
+      transaction.delete(postRef);
+      transaction.update(statsRef, { immigration: increment(-1) });
+    });
+
+    revalidateTag(`imm-${postId}`);
+    revalidateTag('stats');
+    revalidateTag('immigration-home');
+    revalidatePath('/');
+    revalidatePath('/immigration');
+  } catch (e) {
+    console.error("Error deleting immigration post: ", e);
+    throw new Error("Failed to delete immigration post");
+  }
 }
 
 export function getCategories() {
@@ -932,13 +1170,29 @@ export async function getAllUsers(): Promise<User[]> {
   }
 }
 
+export async function createUserDocument(userId: string, userData: any) {
+  const userRef = doc(db, 'users', userId);
+  const statsRef = doc(db, 'stats', 'general');
+
+  await runTransaction(db, async (transaction) => {
+    transaction.set(userRef, userData);
+    transaction.update(statsRef, { users: increment(1) });
+  });
+}
+
 export async function deleteUser(userId: string) {
-    try {
-        await deleteDoc(doc(db, 'users', userId));
-    } catch (e) {
-        console.error("Error deleting user document: ", e);
-        throw new Error("Failed to delete user document");
-    }
+  try {
+    const userRef = doc(db, 'users', userId);
+    const statsRef = doc(db, 'stats', 'general');
+
+    await runTransaction(db, async (transaction) => {
+      transaction.delete(userRef);
+      transaction.update(statsRef, { users: increment(-1) });
+    });
+  } catch (e) {
+    console.error("Error deleting user document: ", e);
+    throw new Error("Failed to delete user document");
+  }
 }
 
 // --- Saved Ads Functions ---
@@ -955,22 +1209,84 @@ export async function getSavedAdIds(userId: string): Promise<string[]> {
 }
 
 export async function getSavedAds(userId: string): Promise<(Job | Competition | ImmigrationPost)[]> {
-    if (!userId) return [];
-    try {
-        const savedAdIds = await getSavedAdIds(userId);
-        if (savedAdIds.length === 0) return [];
+  if (!userId) return [];
 
-        const adPromises = savedAdIds.map(id => getJobById(id));
-        const competitionPromises = savedAdIds.map(id => getCompetitionById(id));
-        const immigrationPromises = savedAdIds.map(id => getImmigrationPostById(id));
+  try {
+    const savedAdsRef = collection(db, 'users', userId, 'savedAds');
+    const snapshot = await getDocs(savedAdsRef);
+    
+    if (snapshot.empty) return [];
 
-        const results = await Promise.all([...adPromises, ...competitionPromises, ...immigrationPromises]);
-        
-        return results.filter(item => item !== null) as (Job | Competition | ImmigrationPost)[];
-    } catch (error) {
-        console.error("Error fetching saved ads details: ", error);
-        return [];
-    }
+    const jobIds: string[] = [];
+    const competitionIds: string[] = [];
+    const immigrationIds: string[] = [];
+
+    snapshot.docs.forEach(doc => {
+      const data = doc.data();
+      const type = data.type || 'job';
+      
+      if (type === 'job') jobIds.push(doc.id);
+      else if (type === 'competition') competitionIds.push(doc.id);
+      else if (type === 'immigration') immigrationIds.push(doc.id);
+    });
+
+    const results: (Job | Competition | ImmigrationPost)[] = [];
+
+    const fetchBatch = async (collectionName: string, ids: string[], mapper: (doc: any) => any) => {
+      if (ids.length === 0) return;
+      
+      const chunks = chunkArray(ids, 30);
+      
+      const promises = chunks.map(chunk => {
+        const q = query(collection(db, collectionName), where(documentId(), 'in', chunk));
+        return getDocs(q);
+      });
+
+      const snapshots = await Promise.all(promises);
+      
+      snapshots.forEach(snap => {
+        snap.docs.forEach(doc => {
+          results.push(mapper(doc));
+        });
+      });
+    };
+
+    const jobMapper = (doc: any) => ({
+      id: doc.id,
+      ...doc.data(),
+      postedAt: formatTimeAgo(doc.data().createdAt),
+    } as Job);
+
+    const compMapper = (doc: any) => ({
+      id: doc.id,
+      ...doc.data(),
+      postedAt: formatTimeAgo(doc.data().createdAt),
+    } as Competition);
+
+    const immMapper = (doc: any) => {
+      const data = doc.data();
+      const programDetails = getProgramTypeDetails(data.programType);
+      return {
+        id: doc.id,
+        ...data,
+        iconName: programDetails.icon,
+        postedAt: formatTimeAgo(data.createdAt),
+      } as ImmigrationPost;
+    };
+
+    await Promise.all([
+      fetchBatch('ads', jobIds, jobMapper),
+      fetchBatch('competitions', competitionIds, compMapper),
+      fetchBatch('immigration', immigrationIds, immMapper)
+    ]);
+
+    results.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+
+    return results;
+  } catch (error) {
+    console.error("Error fetching saved ads details: ", error);
+    return [];
+  }
 }
 
 export async function toggleSaveAd(userId: string, adId: string, adType: 'job' | 'competition' | 'immigration') {
@@ -1041,6 +1357,95 @@ export async function deleteContactMessage(messageId: string): Promise<void> {
   await deleteDoc(doc(db, 'contacts', messageId));
 }
 
+export async function getGlobalStats() {
+  try {
+    const docRef = doc(db, 'stats', 'general');
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      return docSnap.data() as {
+        jobs: number;
+        seekers: number;
+        competitions: number;
+        immigration: number;
+        users: number;
+      };
+    }
+    return { jobs: 0, seekers: 0, competitions: 0, immigration: 0, users: 0 };
+  } catch (error) {
+    console.error("Error fetching stats:", error);
+    return { jobs: 0, seekers: 0, competitions: 0, immigration: 0, users: 0 };
+  }
+}
+
+export const getCachedGlobalStats = unstable_cache(
+  async () => getGlobalStats(),
+  ['global-stats'],
+  { revalidate: 86400, tags: ['stats'] }
+);
+
+export const getCachedHomePageJobs = unstable_cache(
+  async (isMobile: boolean) => {
+    const count = isMobile ? 4 : 8;
+    return getJobOffers({ count });
+  },
+  ['home-jobs'], 
+  { revalidate: 86400, tags: ['jobs-home'] }
+);
+
+export const getCachedHomePageCompetitions = unstable_cache(
+  async (isMobile: boolean) => {
+    const count = isMobile ? 2 : 4;
+    return getCompetitions({ count });
+  },
+  ['home-competitions'],
+  { revalidate: 86400, tags: ['competitions-home'] }
+);
+
+export const getCachedHomePageImmigration = unstable_cache(
+  async (isMobile: boolean) => {
+    const count = isMobile ? 4 : 8;
+    return getImmigrationPosts({ count });
+  },
+  ['home-immigration'],
+  { revalidate: 86400, tags: ['immigration-home'] }
+);
+
+export const getCachedHomePageSeekers = unstable_cache(
+  async (isMobile: boolean) => {
+    const count = isMobile ? 2 : 4;
+    return getJobSeekers({ count });
+  },
+  ['home-seekers'],
+  { revalidate: 86400, tags: ['seekers-home'] }
+);
+
+export const getCachedHomePageTestimonials = unstable_cache(
+  async (isMobile: boolean) => {
+    const count = isMobile ? 1 : 4;
+    return getTestimonials({ limit: count });
+  },
+  ['home-testimonials'], 
+  { revalidate: 86400, tags: ['testimonials'] }
+);
+
+export const getCachedJobById = (id: string) => unstable_cache(
+  async () => getJobById(id),
+  [`job-${id}`],
+  { tags: [`job-${id}`], revalidate: 86400 }
+)();
+
+export const getCachedCompetitionById = (id: string) => unstable_cache(
+  async () => getCompetitionById(id),
+  [`comp-${id}`],
+  { tags: [`comp-${id}`], revalidate: 86400 }
+)();
+
+export const getCachedImmigrationById = (id: string) => unstable_cache(
+  async () => getImmigrationPostById(id),
+  [`imm-${id}`],
+  { tags: [`imm-${id}`], revalidate: 86400 }
+)();
 
 // Duplicated functions for new page content structure
 // These will replace the older getAds function eventually.
