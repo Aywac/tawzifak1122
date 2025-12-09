@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -7,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { MobilePageHeader } from '@/components/layout/mobile-page-header';
 import { DesktopPageHeader } from '@/components/layout/desktop-page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, User, Users, Trash2 } from 'lucide-react';
+import { Loader2, Users, Trash2 } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -30,7 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from '@/hooks/use-toast';
 import { getAllUsers, deleteUser } from '@/lib/data';
-import type { User as AppUser } from '@/lib/types';
+import type { User as AppUser, FirestoreCursor } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 
 function formatFirestoreTimestamp(timestamp: any) {
@@ -44,13 +43,19 @@ function formatFirestoreTimestamp(timestamp: any) {
     });
 }
 
+const ITEMS_PER_PAGE = 10;
+
 export default function AdminUsersPage() {
   const { userData, loading: authLoading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
   const [users, setUsers] = useState<AppUser[]>([]);
+  const [lastDoc, setLastDoc] = useState<FirestoreCursor>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+
   const [userToDelete, setUserToDelete] = useState<AppUser | null>(null);
 
   useEffect(() => {
@@ -64,8 +69,13 @@ export default function AdminUsersPage() {
       const fetchUsers = async () => {
         setLoading(true);
         try {
-          const allUsers = await getAllUsers();
-          setUsers(allUsers);
+          const { data, lastDoc: cursor } = await getAllUsers({ limit: ITEMS_PER_PAGE });
+          setUsers(data);
+          setLastDoc(cursor);
+          
+          if (data.length < ITEMS_PER_PAGE) {
+            setHasMore(false);
+          }
         } catch (error) {
           toast({ variant: 'destructive', title: 'فشل تحميل المستخدمين' });
         } finally {
@@ -75,6 +85,29 @@ export default function AdminUsersPage() {
       fetchUsers();
     }
   }, [userData, toast]);
+
+  const loadMoreUsers = async () => {
+    if (!lastDoc) return;
+    
+    setLoadingMore(true);
+    try {
+      const { data, lastDoc: cursor } = await getAllUsers({ 
+        limit: ITEMS_PER_PAGE, 
+        lastDoc: lastDoc 
+      });
+
+      setUsers(prev => [...prev, ...data]);
+      setLastDoc(cursor);
+
+      if (data.length < ITEMS_PER_PAGE) {
+        setHasMore(false);
+      }
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'فشل تحميل المزيد من المستخدمين' });
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const handleDeleteUser = async () => {
     if (!userToDelete) return;
@@ -111,7 +144,7 @@ export default function AdminUsersPage() {
       <div className="container mx-auto max-w-7xl px-4 pb-8">
         <Card>
           <CardHeader>
-            <CardTitle>قائمة المستخدمين ({users.length})</CardTitle>
+            <CardTitle>قائمة المستخدمين</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border">
@@ -140,9 +173,9 @@ export default function AdminUsersPage() {
                         <TableCell>{user.email}</TableCell>
                         <TableCell>{formatFirestoreTimestamp(user.createdAt)}</TableCell>
                         <TableCell className="text-center">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="text-destructive hover:bg-destructive/10 active:scale-95 transition-transform"
                             onClick={() => setUserToDelete(user)}
                             disabled={user.isAdmin}
@@ -163,6 +196,27 @@ export default function AdminUsersPage() {
                 </TableBody>
               </Table>
             </div>
+
+            {hasMore && (
+              <div className="text-center mt-6">
+                <Button 
+                  onClick={loadMoreUsers} 
+                  disabled={loadingMore} 
+                  size="lg" 
+                  variant="outline" 
+                  className="active:scale-95 transition-transform min-w-[150px]"
+                >
+                  {loadingMore ? (
+                    <>
+                      <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                      جاري التحميل...
+                    </>
+                  ) : (
+                    'تحميل المزيد'
+                  )}
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

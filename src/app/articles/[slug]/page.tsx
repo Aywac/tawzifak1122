@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation';
 import Image from 'next/image';
-import { getArticleBySlug as getDbArticleBySlug, getArticles as getDbArticles } from '@/lib/data';
-import { getArticleBySlug as getStaticArticleBySlug, getArticles as getStaticArticles } from '@/lib/articles';
+import { getCachedArticleBySlug, getArticles } from '@/lib/data';
 import { MobilePageHeader } from '@/components/layout/mobile-page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { User, Newspaper } from 'lucide-react';
@@ -15,11 +14,7 @@ interface Props {
 }
 
 async function getArticle(slug: string): Promise<Article | null> {
-  let article = await getDbArticleBySlug(slug);
-  if (!article) {
-    article = getStaticArticleBySlug(slug) || null;
-  }
-  return article;
+  return await getCachedArticleBySlug(slug);
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -218,13 +213,9 @@ export default async function ArticlePage({ params }: Props) {
     notFound();
   }
 
-  const staticArticles = getStaticArticles();
-  const dbArticles = await getDbArticles();
-  const allArticles = [...staticArticles, ...dbArticles];
-
-  const relatedArticles = allArticles
-    .filter(a => a.slug !== article.slug)
-    .sort(() => 0.5 - Math.random())
+  const { data: latestArticles } = await getArticles({ limit: 4 });
+  const relatedArticles = latestArticles
+    .filter(a => a.id !== article.id && a.slug !== article.slug)
     .slice(0, 3);
 
   return (
@@ -285,13 +276,7 @@ export default async function ArticlePage({ params }: Props) {
 }
 
 export async function generateStaticParams() {
-  const { getArticles: getStaticArticles } = await import('@/lib/articles');
-  const { getArticles: getDbArticles } = await import('@/lib/data');
+  const { data } = await getArticles({ limit: 24 }); 
 
-  const staticArticles = getStaticArticles();
-  const dbArticles = await getDbArticles();
-
-  const allArticles = [...staticArticles, ...dbArticles];
-
-  return allArticles.map(article => ({ slug: article.slug }));
+  return data.map(article => ({ slug: article.slug }));
 }

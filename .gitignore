@@ -15,6 +15,7 @@
 # development
 /src/app/admin/recalc-stats
 /src/app/migrate-all-images
+/src/app/migrate-articles
 
 # production
 /build

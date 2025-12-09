@@ -1041,21 +1041,41 @@ export function getOrganizerByName(organizerName?: string): Organizer | undefine
 }
 
 // --- Articles Functions ---
-export async function getArticles(): Promise<Article[]> {
+export async function getArticles(
+  options: {
+    limit?: number;
+    lastDoc?: FirestoreCursor;
+  } = {}
+): Promise<PaginatedResponse<Article>> {
   try {
+    const { limit: pageLimit = 8, lastDoc } = options;
     const articlesRef = collection(db, 'articles');
-    let q = query(articlesRef, orderBy('createdAt', 'desc'));
     
+    const constraints: QueryConstraint[] = [
+      orderBy('createdAt', 'desc')
+    ];
+
+    if (lastDoc) {
+      constraints.push(startAfter(lastDoc));
+    }
+
+    constraints.push(limit(pageLimit));
+
+    const q = query(articlesRef, ...constraints);
     const querySnapshot = await getDocs(q);
-    
-    return querySnapshot.docs.map(doc => ({
+
+    const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+
+    const data = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       postedAt: formatTimeAgo(doc.data().createdAt),
     } as Article));
+
+    return { data, lastDoc: lastVisible };
   } catch (error) {
     console.error("Error fetching articles: ", error);
-    return [];
+    return { data: [], lastDoc: null };
   }
 }
 
@@ -1135,6 +1155,7 @@ export async function updateArticle(articleId: string, articleData: Partial<Omit
 
         revalidatePath('/articles');
         if (dataToUpdate.slug) {
+            revalidateTag(`article-${dataToUpdate.slug}`);
             revalidatePath(`/articles/${dataToUpdate.slug}`);
         }
 
@@ -1155,18 +1176,40 @@ export async function deleteArticle(articleId: string): Promise<void> {
 }
 
 // --- Admin Functions ---
-export async function getAllUsers(): Promise<User[]> {
+export async function getAllUsers(
+  options: {
+    limit?: number;
+    lastDoc?: FirestoreCursor;
+  } = {}
+): Promise<PaginatedResponse<User>> {
   try {
+    const { limit: pageLimit = 20, lastDoc } = options;
     const usersRef = collection(db, 'users');
-    const q = query(usersRef, orderBy('createdAt', 'desc'));
+    
+    const constraints: QueryConstraint[] = [
+      orderBy('createdAt', 'desc')
+    ];
+
+    if (lastDoc) {
+      constraints.push(startAfter(lastDoc));
+    }
+
+    constraints.push(limit(pageLimit));
+
+    const q = query(usersRef, ...constraints);
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
+    
+    const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
+
+    const data = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
     } as User));
+
+    return { data, lastDoc: lastVisible };
   } catch (error) {
     console.error("Error fetching all users: ", error);
-    return [];
+    return { data: [], lastDoc: null };
   }
 }
 
@@ -1445,6 +1488,12 @@ export const getCachedImmigrationById = (id: string) => unstable_cache(
   async () => getImmigrationPostById(id),
   [`imm-${id}`],
   { tags: [`imm-${id}`], revalidate: 86400 }
+)();
+
+export const getCachedArticleBySlug = (slug: string) => unstable_cache(
+  async () => getArticleBySlug(slug),
+  [`article-${slug}`],
+  { tags: [`article-${slug}`], revalidate: 86400 }
 )();
 
 // Duplicated functions for new page content structure
