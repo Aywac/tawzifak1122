@@ -1,7 +1,7 @@
 
 import type { Timestamp, DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 
-export type FirestoreCursor = QueryDocumentSnapshot<DocumentData, DocumentData> | null;
+export type FirestoreCursor = QueryDocumentSnapshot<DocumentData, DocumentData> | any | null;
 
 export interface Category {
   id: string;
@@ -175,6 +175,7 @@ export interface Article {
     summary: string;
     content: string;
     createdAt?: Timestamp; // Optional for static articles
+    createdAtISO?: string;
     date?: string; // Optional for static articles
     postedAt?: string;
 }

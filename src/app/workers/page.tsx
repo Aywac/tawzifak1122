@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { MobilePageHeader } from '@/components/layout/mobile-page-header';
 import { DesktopPageHeader } from '@/components/layout/desktop-page-header';
 import { PageContent } from './page-content';
+import { getCachedInitialJobSeekers } from '@/lib/data';
 
 export const metadata: Metadata = {
   title: 'باحثون عن عمل - تصفح ملفات المرشحين',
@@ -20,7 +21,10 @@ function WorkerListSkeleton() {
   );
 }
 
-export default function WorkersPage() {
+export default async function WorkersPage({ searchParams }: { searchParams: { q?: string; country?: string; city?: string; category?: string; job?: string } }) {
+  const hasFilters = searchParams.q || searchParams.country || searchParams.city || searchParams.category || searchParams.job;
+  const initialWorkers = !hasFilters ? await getCachedInitialJobSeekers() : [];
+
   return (
     <>
       <MobilePageHeader title="باحثون عن عمل" sticky={false}>
@@ -32,7 +36,7 @@ export default function WorkersPage() {
         description="استعرض ملفات الباحثين عن عمل واعثر على الكفاءات التي تحتاجها."
       />
       <Suspense fallback={<div className="container"><WorkerListSkeleton/></div>}>
-        <PageContent />
+        <PageContent initialWorkers={initialWorkers} />
       </Suspense>
     </>
   );

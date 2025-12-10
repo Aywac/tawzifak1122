@@ -3,50 +3,27 @@
 import { getArticles } from '@/lib/data';
 import { ArticleCard } from './article-card';
 import type { Article, FirestoreCursor } from '@/lib/types';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
+import { Timestamp } from 'firebase/firestore';
 
 const ARTICLES_PER_PAGE = 8;
 
-export function PageContent() {
-  const [articles, setArticles] = useState<Article[]>([]);
+export function PageContent({ initialArticles = [] }: { initialArticles?: Article[] }) {
+  const [articles, setArticles] = useState<Article[]>(initialArticles);
   const [lastDoc, setLastDoc] = useState<FirestoreCursor>(null);
-  const [loading, setLoading] = useState(true);
+  
+  const [loading, setLoading] = useState(initialArticles.length === 0);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(initialArticles.length >= ARTICLES_PER_PAGE);
 
-  useEffect(() => {
-    const fetchInitialArticles = async () => {
-      try {
-        const { data, lastDoc: nextCursor } = await getArticles({ 
-          limit: ARTICLES_PER_PAGE 
-        });
-        
-        setArticles(data);
-        setLastDoc(nextCursor);
-        
-        if (data.length < ARTICLES_PER_PAGE) {
-          setHasMore(false);
-        }
-      } catch (error) {
-        console.error("Failed to fetch articles", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchInitialArticles();
-  }, []);
-
-  const loadMoreArticles = async () => {
-    if (!lastDoc) return;
-    
+  const fetchArticles = async (cursor: FirestoreCursor) => {
     setLoadingMore(true);
     try {
       const { data: newArticles, lastDoc: nextCursor } = await getArticles({
         limit: ARTICLES_PER_PAGE,
-        lastDoc: lastDoc
+        lastDoc: cursor
       });
 
       setArticles(prev => [...prev, ...newArticles]);
@@ -58,11 +35,28 @@ export function PageContent() {
     } catch (error) {
       console.error("Failed to load more articles", error);
     } finally {
+      setLoading(false);
       setLoadingMore(false);
     }
   };
 
-  if (loading) {
+  const loadMoreArticles = () => {
+    let cursorToUse = lastDoc;
+
+    if (!cursorToUse && articles.length > 0) {
+      const lastArticle = articles[articles.length - 1];
+      
+      if (lastArticle.createdAtISO) {
+         cursorToUse = Timestamp.fromDate(new Date(lastArticle.createdAtISO));
+      } else if (lastArticle.createdAt && typeof lastArticle.createdAt.toDate === 'function') {
+         cursorToUse = lastArticle.createdAt;
+      }
+    }
+
+    fetchArticles(cursorToUse);
+  };
+
+  if (loading && articles.length === 0) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
         {Array.from({ length: 8 }).map((_, i) => (

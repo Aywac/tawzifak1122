@@ -418,8 +418,8 @@ export async function postJob(jobData: Omit<Job, 'id' | 'createdAt' | 'likes' | 
     }
 
     revalidateTag('stats');
-    revalidateTag('jobs-home');
-    revalidateTag('seekers-home');
+    revalidateTag(jobData.postType === 'seeking_worker' ? 'jobs-home' : 'seekers-home');
+    revalidateTag(jobData.postType === 'seeking_worker' ? 'jobs-list' : 'seekers-list'); 
     revalidatePath('/');
     revalidatePath(jobData.postType === 'seeking_job' ? '/workers' : '/jobs');
 
@@ -452,6 +452,11 @@ export async function updateAd(adId: string, adData: Partial<Job>) {
         await updateDoc(adRef, dataToUpdate);
 
         revalidateTag(`job-${adId}`);
+        revalidateTag('jobs-list');
+        revalidateTag('seekers-list');
+        revalidateTag('jobs-home');
+        revalidateTag('seekers-home');
+
         revalidatePath('/');
         revalidatePath('/jobs');
         revalidatePath('/workers');
@@ -484,6 +489,9 @@ export async function deleteAd(adId: string) {
     revalidateTag('stats');
     revalidateTag('jobs-home');
     revalidateTag('seekers-home');
+    revalidateTag('jobs-list');
+    revalidateTag('seekers-list');
+
     revalidatePath('/');
     revalidatePath('/jobs');
     revalidatePath('/workers');
@@ -548,6 +556,8 @@ export async function addTestimonial(testimonialData: Omit<Testimonial, 'id' | '
         const newDocRef = await addDoc(reviewsCollection, dataToSave);
         
         revalidateTag('testimonials');
+        revalidateTag('testimonials-list');
+
         revalidatePath('/');
         revalidatePath('/testimonials');
         
@@ -607,6 +617,8 @@ export async function deleteTestimonial(testimonialId: string) {
         await deleteDoc(doc(db, 'reviews', testimonialId));
 
         revalidateTag('testimonials');
+        revalidateTag('testimonials-list');
+
         revalidatePath('/');
         revalidatePath('/testimonials');
     } catch (e) {
@@ -630,6 +642,8 @@ export async function postCompetition(competitionData: Omit<Competition, 'id' | 
 
     revalidateTag('stats');
     revalidateTag('competitions-home');
+    revalidateTag('competitions-list');
+
     revalidatePath('/');
     revalidatePath('/competitions');
 
@@ -778,6 +792,9 @@ export async function updateCompetition(id: string, competitionData: Partial<Com
         await updateDoc(competitionRef, dataToUpdate);
 
         revalidateTag(`comp-${id}`);
+        revalidateTag('competitions-home');
+        revalidateTag('competitions-list');
+
         revalidatePath('/');
         revalidatePath('/competitions');
         revalidatePath(`/competitions/${id}`);
@@ -800,6 +817,8 @@ export async function deleteCompetition(competitionId: string) {
     revalidateTag(`comp-${competitionId}`);
     revalidateTag('stats');
     revalidateTag('competitions-home');
+    revalidateTag('competitions-list');
+
     revalidatePath('/');
     revalidatePath('/competitions');
   } catch (e) {
@@ -818,14 +837,7 @@ export async function getImmigrationPosts(
   } = {}
 ): Promise<PaginatedResponse<ImmigrationPost>> {
   try {
-    const { 
-      count, 
-      searchQuery, 
-      excludeId, 
-      lastDoc, 
-      limit: pageLimit = 16 
-    } = options;
-
+    const { count, searchQuery, excludeId, lastDoc, limit: pageLimit = 16 } = options;
     const postsRef = collection(db, 'immigration');
 
     if (searchQuery) {
@@ -958,6 +970,8 @@ export async function postImmigration(postData: Omit<ImmigrationPost, 'id' | 'cr
 
     revalidateTag('stats');
     revalidateTag('immigration-home');
+    revalidateTag('immigration-list');
+
     revalidatePath('/');
     revalidatePath('/immigration');
 
@@ -989,6 +1003,9 @@ export async function updateImmigrationPost(id: string, postData: Partial<Immigr
         await updateDoc(postRef, dataToUpdate);
 
         revalidateTag(`imm-${id}`);
+        revalidateTag('immigration-home');
+        revalidateTag('immigration-list'); 
+
         revalidatePath('/');
         revalidatePath('/immigration');
         revalidatePath(`/immigration/${id}`);
@@ -1015,6 +1032,8 @@ export async function deleteImmigrationPost(postId: string) {
     revalidateTag(`imm-${postId}`);
     revalidateTag('stats');
     revalidateTag('immigration-home');
+    revalidateTag('immigration-list');
+
     revalidatePath('/');
     revalidatePath('/immigration');
   } catch (e) {
@@ -1066,11 +1085,19 @@ export async function getArticles(
 
     const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
 
-    const data = querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      postedAt: formatTimeAgo(doc.data().createdAt),
-    } as Article));
+    const data = querySnapshot.docs.map(doc => {
+      const data = doc.data();
+      const createdAtDate = data.createdAt?.toDate 
+        ? data.createdAt.toDate() 
+        : (data.date ? new Date(data.date) : new Date());
+
+      return {
+        id: doc.id,
+        ...data,
+        postedAt: formatTimeAgo(data.createdAt),
+        createdAtISO: createdAtDate.toISOString(),
+      } as Article;
+    });
 
     return { data, lastDoc: lastVisible };
   } catch (error) {
@@ -1127,6 +1154,8 @@ export async function addArticle(articleData: Omit<Article, 'id' | 'createdAt' |
             ...articleData,
             createdAt: serverTimestamp()
         });
+
+        revalidateTag('articles-list');
         
         revalidatePath('/articles');
         revalidatePath(`/articles/${articleData.slug}`);
@@ -1153,7 +1182,10 @@ export async function updateArticle(articleId: string, articleData: Partial<Omit
 
         await updateDoc(doc(db, 'articles', articleId), dataToUpdate);
 
+        revalidateTag('articles-list');
+
         revalidatePath('/articles');
+
         if (dataToUpdate.slug) {
             revalidateTag(`article-${dataToUpdate.slug}`);
             revalidatePath(`/articles/${dataToUpdate.slug}`);
@@ -1168,6 +1200,9 @@ export async function updateArticle(articleId: string, articleData: Partial<Omit
 export async function deleteArticle(articleId: string): Promise<void> {
     try {
         await deleteDoc(doc(db, 'articles', articleId));
+
+        revalidateTag('articles-list');
+
         revalidatePath('/articles');
     } catch (e) {
         console.error("Error deleting article: ", e);
@@ -1421,10 +1456,64 @@ export async function getGlobalStats() {
   }
 }
 
+export const getCachedInitialJobs = unstable_cache(
+  async () => {
+    const { data } = await getJobOffers({ limit: 16 });
+    return data;
+  },
+  ['initial-jobs-list'],
+  { tags: ['jobs-list', 'jobs-home'], revalidate: 86400 }
+);
+
+export const getCachedInitialImmigrationPosts = unstable_cache(
+  async () => {
+    const { data } = await getImmigrationPosts({ limit: 16 });
+    return data;
+  },
+  ['initial-immigration-list'],
+  { tags: ['immigration-list', 'immigration-home'], revalidate: 86400 }
+);
+
+export const getCachedInitialCompetitions = unstable_cache(
+  async () => {
+    const { data } = await getCompetitions({ limit: 16 });
+    return data;
+  },
+  ['initial-competitions-list'],
+  { tags: ['competitions-list', 'competitions-home'], revalidate: 86400 }
+);
+
+export const getCachedInitialJobSeekers = unstable_cache(
+  async () => {
+    const { data } = await getJobSeekers({ limit: 16 });
+    return data;
+  },
+  ['initial-seekers-list'],
+  { tags: ['seekers-list', 'seekers-home'], revalidate: 86400 }
+);
+
+export const getCachedInitialTestimonials = unstable_cache(
+  async () => {
+    const { data } = await getTestimonials({ limit: 8 });
+    return data;
+  },
+  ['initial-testimonials-list'],
+  { tags: ['testimonials-list', 'testimonials-home', 'testimonials'], revalidate: 86400 }
+);
+
+export const getCachedInitialArticles = unstable_cache(
+  async () => {
+    const { data } = await getArticles({ limit: 8 });
+    return data;
+  },
+  ['initial-articles-list'],
+  { tags: ['articles-list', 'articles-home', 'articles'], revalidate: 86400 }
+);
+
 export const getCachedGlobalStats = unstable_cache(
   async () => getGlobalStats(),
   ['global-stats'],
-  { revalidate: 86400, tags: ['stats'] }
+  { tags: ['stats'], revalidate: 86400 }
 );
 
 export const getCachedHomePageJobs = unstable_cache(
@@ -1433,7 +1522,7 @@ export const getCachedHomePageJobs = unstable_cache(
     return getJobOffers({ count });
   },
   ['home-jobs'], 
-  { revalidate: 86400, tags: ['jobs-home'] }
+  { tags: ['jobs-home'], revalidate: 86400 }
 );
 
 export const getCachedHomePageCompetitions = unstable_cache(
@@ -1442,7 +1531,7 @@ export const getCachedHomePageCompetitions = unstable_cache(
     return getCompetitions({ count });
   },
   ['home-competitions'],
-  { revalidate: 86400, tags: ['competitions-home'] }
+  { tags: ['competitions-home'], revalidate: 86400 }
 );
 
 export const getCachedHomePageImmigration = unstable_cache(
@@ -1451,7 +1540,7 @@ export const getCachedHomePageImmigration = unstable_cache(
     return getImmigrationPosts({ count });
   },
   ['home-immigration'],
-  { revalidate: 86400, tags: ['immigration-home'] }
+  { tags: ['immigration-home'], revalidate: 86400 }
 );
 
 export const getCachedHomePageSeekers = unstable_cache(
@@ -1460,7 +1549,7 @@ export const getCachedHomePageSeekers = unstable_cache(
     return getJobSeekers({ count });
   },
   ['home-seekers'],
-  { revalidate: 86400, tags: ['seekers-home'] }
+  { tags: ['seekers-home'], revalidate: 86400 }
 );
 
 export const getCachedHomePageTestimonials = unstable_cache(
@@ -1469,7 +1558,7 @@ export const getCachedHomePageTestimonials = unstable_cache(
     return getTestimonials({ limit: count });
   },
   ['home-testimonials'], 
-  { revalidate: 86400, tags: ['testimonials'] }
+  { tags: ['testimonials'], revalidate: 86400 }
 );
 
 export const getCachedJobById = (id: string) => unstable_cache(

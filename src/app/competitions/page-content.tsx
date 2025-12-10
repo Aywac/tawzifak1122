@@ -8,6 +8,7 @@ import { useSearchParams } from 'next/navigation';
 import { getCompetitions } from '@/lib/data';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
+import { Timestamp } from 'firebase/firestore';
 
 const ITEMS_PER_PAGE = 16;
 
@@ -15,24 +16,35 @@ function CompetitionFiltersSkeleton() {
   return <div className="h-14 bg-muted rounded-xl w-full animate-pulse" />;
 }
 
-export function PageContent() {
+export function PageContent({ initialCompetitions = [] }: { initialCompetitions?: Competition[] }) {
   const searchParams = useSearchParams();
-  const [competitions, setCompetitions] = useState<Competition[]>([]);
   
+  const [competitions, setCompetitions] = useState<Competition[]>(initialCompetitions);
   const [lastDoc, setLastDoc] = useState<FirestoreCursor>(null);
-  const [loading, setLoading] = useState(true);
+  
+  const [loading, setLoading] = useState(initialCompetitions.length === 0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
   const q = searchParams.get('q');
 
   useEffect(() => {
+    const isInitialState = !q && initialCompetitions.length > 0;
+
+    if (isInitialState) {
+        setCompetitions(initialCompetitions);
+        setLastDoc(null);
+        setLoading(false);
+        setHasMore(initialCompetitions.length >= ITEMS_PER_PAGE);
+        return;
+    }
+
     setCompetitions([]);
     setLastDoc(null);
     setHasMore(true);
     setLoading(true);
     fetchCompetitions(null, true);
-  }, [q]);
+  }, [q, initialCompetitions]);
 
   const fetchCompetitions = async (cursor: FirestoreCursor, isReset: boolean) => {
     try {
@@ -49,7 +61,12 @@ export function PageContent() {
       }
 
       setLastDoc(nextCursor);
-      setHasMore(newComps.length === ITEMS_PER_PAGE);
+      
+      if (newComps.length < ITEMS_PER_PAGE) {
+        setHasMore(false);
+      } else {
+        setHasMore(true);
+      }
 
     } catch (error) {
       console.error(error);
@@ -60,9 +77,18 @@ export function PageContent() {
   };
 
   const loadMore = () => {
-    if (!lastDoc) return;
     setLoadingMore(true);
-    fetchCompetitions(lastDoc, false);
+
+    let cursorToUse = lastDoc;
+
+    if (!cursorToUse && competitions.length > 0) {
+      const lastComp = competitions[competitions.length - 1];
+      if (lastComp.createdAtISO) {
+         cursorToUse = Timestamp.fromDate(new Date(lastComp.createdAtISO));
+      }
+    }
+
+    fetchCompetitions(cursorToUse, false);
   };
 
   return (

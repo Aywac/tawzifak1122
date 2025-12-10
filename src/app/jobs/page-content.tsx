@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { JobCard } from '@/components/job-card';
 import { JobFilters } from '@/components/job-filters';
 import type { FirestoreCursor, Job, WorkType } from '@/lib/types';
@@ -9,30 +8,47 @@ import { useSearchParams } from 'next/navigation';
 import { getJobOffers } from '@/lib/data';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
+import { Timestamp } from 'firebase/firestore';
 
 const ITEMS_PER_PAGE = 16;
 
-export function PageContent() {
+function JobFiltersSkeleton() {
+  return <div className="h-14 bg-muted rounded-lg w-full animate-pulse" />;
+}
+
+export function PageContent({ initialJobs = [] }: { initialJobs?: Job[] }) {
   const searchParams = useSearchParams();
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
+  
+  const [jobs, setJobs] = useState<Job[]>(initialJobs);
+  const [lastDoc, setLastDoc] = useState<FirestoreCursor>(null);
+  
+  const [loading, setLoading] = useState(initialJobs.length === 0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [lastDoc, setLastDoc] = useState<FirestoreCursor>(null);
 
   const q = searchParams.get('q');
   const country = searchParams.get('country');
   const city = searchParams.get('city');
   const category = searchParams.get('category');
-  const workType = searchParams.get('workType');
+  const workType = searchParams.get('job');
 
   useEffect(() => {
+    const isInitialState = !q && !country && !city && !category && !workType && initialJobs.length > 0;
+    
+    if (isInitialState) {
+      setJobs(initialJobs);
+      setLastDoc(null);
+      setLoading(false);
+      setHasMore(initialJobs.length >= ITEMS_PER_PAGE);
+      return;
+    }
+
     setJobs([]);
     setLastDoc(null);
     setHasMore(true);
     setLoading(true);
     fetchAndSetJobs(null, true);
-  }, [q, country, city, category, workType]);
+  }, [q, country, city, category, workType, initialJobs]);
 
   const fetchAndSetJobs = async (cursor: FirestoreCursor, isReset: boolean) => {
     try {
@@ -68,16 +84,27 @@ export function PageContent() {
   };
 
   const loadMore = () => {
-    if (!lastDoc) return;
     setLoadingMore(true);
-    fetchAndSetJobs(lastDoc, false);
+
+    let cursorToUse = lastDoc;
+
+    if (!cursorToUse && jobs.length > 0) {
+      const lastJob = jobs[jobs.length - 1];
+      if (lastJob.createdAtISO) {
+        cursorToUse = Timestamp.fromDate(new Date(lastJob.createdAtISO));
+      }
+    }
+
+    fetchAndSetJobs(cursorToUse, false);
   };
 
   return (
     <>
       <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm md:top-20">
         <div className="container py-3">
-          <JobFilters />
+          <Suspense fallback={<JobFiltersSkeleton />}>
+            <JobFilters />
+          </Suspense>
         </div>
       </div>
 

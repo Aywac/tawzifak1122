@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { MobilePageHeader } from '@/components/layout/mobile-page-header';
 import { DesktopPageHeader } from '@/components/layout/desktop-page-header';
 import { PageContent } from './page-content';
+import { getCachedInitialCompetitions } from '@/lib/data';
 
 export const metadata: Metadata = {
   title: 'المباريات العمومية - آخر إعلانات التوظيف في القطاع العام',
@@ -20,7 +21,10 @@ function CompetitionListSkeleton() {
   );
 }
 
-export default function CompetitionsPage() {
+export default async function CompetitionsPage({ searchParams }: { searchParams: { q?: string } }) {
+  const hasFilters = !!searchParams.q;
+  const initialCompetitions = !hasFilters ? await getCachedInitialCompetitions() : [];
+
   return (
     <>
       <MobilePageHeader title="المباريات العمومية" sticky={false}>
@@ -32,7 +36,7 @@ export default function CompetitionsPage() {
         description="تصفح أحدث إعلانات التوظيف والمباريات في القطاع العام."
       />
       <Suspense fallback={<div className="container"><CompetitionListSkeleton /></div>}>
-        <PageContent />
+        <PageContent initialCompetitions={initialCompetitions} />
       </Suspense>
     </>
   );

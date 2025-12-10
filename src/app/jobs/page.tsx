@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { MobilePageHeader } from '@/components/layout/mobile-page-header';
 import { DesktopPageHeader } from '@/components/layout/desktop-page-header';
 import { PageContent } from './page-content';
+import { getCachedInitialJobs } from '@/lib/data';
 
 export const metadata: Metadata = {
   title: 'عروض العمل - وظائف جديدة في المغرب',
@@ -20,7 +21,10 @@ function JobListSkeleton() {
   );
 }
 
-export default function JobsPage() {
+export default async function JobsPage({ searchParams }: { searchParams: { q?: string; country?: string; city?: string; category?: string; job?: string } }) {
+  const hasFilters = searchParams.q || searchParams.country || searchParams.city || searchParams.category || searchParams.job;
+  const initialJobs = !hasFilters ? await getCachedInitialJobs() : [];
+
   return (
     <>
       <MobilePageHeader title="الوظائف" sticky={false}>
@@ -32,7 +36,7 @@ export default function JobsPage() {
         description="تصفح أحدث عروض العمل المتاحة في مختلف المجالات والقطاعات."
       />
       <Suspense fallback={<div className="container"><JobListSkeleton /></div>}>
-        <PageContent />
+        <PageContent initialJobs={initialJobs} />
       </Suspense>
     </>
   );

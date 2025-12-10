@@ -2,25 +2,25 @@
 
 import { TestimonialCard } from './testimonial-card';
 import type { Testimonial, FirestoreCursor } from '@/lib/types';
-import { useEffect, useState, useRef } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { getTestimonials } from '@/lib/data';
 import { Loader2 } from 'lucide-react';
+import { Timestamp } from 'firebase/firestore';
 
 const ITEMS_PER_PAGE = 12;
 
-export function PageContent() {
-  const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+export function PageContent({ initialTestimonials = [] }: { initialTestimonials?: Testimonial[] }) {
+  const [testimonials, setTestimonials] = useState<Testimonial[]>(initialTestimonials);
   const [lastDoc, setLastDoc] = useState<FirestoreCursor>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
   
-  const isInitialized = useRef(false);
+  const [loading, setLoading] = useState(initialTestimonials.length === 0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(initialTestimonials.length >= ITEMS_PER_PAGE);
 
   const fetchTestimonials = async (cursor: FirestoreCursor) => {
-    if (cursor) setLoadingMore(true);
-    
+    setLoadingMore(true);
+
     try {
       const { data: newReviews, lastDoc: nextCursor } = await getTestimonials({
           limit: ITEMS_PER_PAGE,
@@ -30,12 +30,11 @@ export function PageContent() {
       setTestimonials(prev => {
         const existingIds = new Set(prev.map(t => t.id));
         const uniqueNewReviews = newReviews.filter(t => !existingIds.has(t.id));
-        
         return [...prev, ...uniqueNewReviews];
       });
 
       setLastDoc(nextCursor);
-      
+
       if (newReviews.length < ITEMS_PER_PAGE) {
           setHasMore(false);
       }
@@ -47,16 +46,17 @@ export function PageContent() {
     }
   };
 
-  useEffect(() => {
-    if (!isInitialized.current) {
-      isInitialized.current = true;
-      fetchTestimonials(null);
-    }
-  }, []);
-
   const loadMore = () => {
-    if (!lastDoc) return;
-    fetchTestimonials(lastDoc);
+    let cursorToUse = lastDoc;
+
+    if (!cursorToUse && testimonials.length > 0) {
+      const lastItem = testimonials[testimonials.length - 1];
+      if (lastItem.createdAtISO) {
+         cursorToUse = Timestamp.fromDate(new Date(lastItem.createdAtISO));
+      }
+    }
+
+    fetchTestimonials(cursorToUse);
   };
 
   if (loading && testimonials.length === 0) {

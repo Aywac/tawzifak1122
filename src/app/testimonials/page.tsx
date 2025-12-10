@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { MobilePageHeader } from '@/components/layout/mobile-page-header';
 import { DesktopPageHeader } from '@/components/layout/desktop-page-header';
 import { PageContent } from './page-content';
+import { getCachedInitialTestimonials } from '@/lib/data';
 
 export const metadata: Metadata = {
   title: 'آراء المستخدمين - ماذا يقولون عن منصة توظيفك',
@@ -30,7 +31,9 @@ function TestimonialsSkeleton() {
   );
 }
 
-export default function TestimonialsPage() {
+export default async function TestimonialsPage() {
+  const initialTestimonials = await getCachedInitialTestimonials();
+
   return (
     <>
       <MobilePageHeader title="آراء المستخدمين">
@@ -45,7 +48,7 @@ export default function TestimonialsPage() {
         
       <div className="container mx-auto max-w-7xl px-4 pb-28">
         <Suspense fallback={<TestimonialsSkeleton />}>
-          <PageContent />
+          <PageContent initialTestimonials={initialTestimonials} />
         </Suspense>
       </div>
     </>

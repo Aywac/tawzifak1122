@@ -8,27 +8,39 @@ import { useSearchParams } from 'next/navigation';
 import { getImmigrationPosts } from '@/lib/data';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
+import { Timestamp } from 'firebase/firestore'; 
 
 const ITEMS_PER_PAGE = 16;
 
-export function PageContent() {
+export function PageContent({ initialPosts = [] }: { initialPosts?: ImmigrationPost[] }) {
   const searchParams = useSearchParams();
-  const [posts, setPosts] = useState<ImmigrationPost[]>([]);
   
+  const [posts, setPosts] = useState<ImmigrationPost[]>(initialPosts);
   const [lastDoc, setLastDoc] = useState<FirestoreCursor>(null);
-  const [loading, setLoading] = useState(true);
+  
+  const [loading, setLoading] = useState(initialPosts.length === 0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
   const q = searchParams.get('q');
 
   useEffect(() => {
+    const isInitialState = !q && initialPosts.length > 0;
+
+    if (isInitialState) {
+        setPosts(initialPosts);
+        setLastDoc(null);
+        setLoading(false);
+        setHasMore(initialPosts.length >= ITEMS_PER_PAGE);
+        return;
+    }
+
     setPosts([]);
     setLastDoc(null);
     setHasMore(true);
     setLoading(true);
     fetchPosts(null, true);
-  }, [q]);
+  }, [q, initialPosts]);
 
   const fetchPosts = async (cursor: FirestoreCursor, isReset: boolean) => {
     try {
@@ -45,7 +57,12 @@ export function PageContent() {
       }
 
       setLastDoc(nextCursor);
-      setHasMore(newPosts.length === ITEMS_PER_PAGE);
+      
+      if (newPosts.length < ITEMS_PER_PAGE) {
+        setHasMore(false);
+      } else {
+        setHasMore(true);
+      }
 
     } catch (error) {
       console.error(error);
@@ -56,9 +73,18 @@ export function PageContent() {
   };
 
   const loadMore = () => {
-    if (!lastDoc) return;
     setLoadingMore(true);
-    fetchPosts(lastDoc, false);
+
+    let cursorToUse = lastDoc;
+
+    if (!cursorToUse && posts.length > 0) {
+      const lastPost = posts[posts.length - 1];
+      if (lastPost.createdAtISO) {
+         cursorToUse = Timestamp.fromDate(new Date(lastPost.createdAtISO));
+      }
+    }
+
+    fetchPosts(cursorToUse, false);
   };
 
   return (

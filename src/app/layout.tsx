@@ -100,11 +100,12 @@ export default function RootLayout({
       <head>  
         <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />  
 
-        <script  
-          async  
+        <Script  
+          id="adsbygoogle-init"
+          strategy="afterInteractive"  
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6413953433245789"  
           crossOrigin="anonymous"  
-        ></script>  
+        ></Script>  
 
         <script  
           type="application/ld+json"  

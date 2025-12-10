@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { MobilePageHeader } from '@/components/layout/mobile-page-header';
 import { DesktopPageHeader } from '@/components/layout/desktop-page-header';
 import { PageContent } from './page-content';
+import { getCachedInitialImmigrationPosts } from '@/lib/data';
 
 export const metadata: Metadata = {
   title: 'فرص الهجرة - عمل، دراسة، وتدريب في الخارج',
@@ -20,7 +21,10 @@ function ImmigrationListSkeleton() {
   );
 }
 
-export default function ImmigrationPage() {
+export default async function ImmigrationPage({ searchParams }: { searchParams: { q?: string } }) {
+  const hasFilters = !!searchParams.q;
+  const initialPosts = !hasFilters ? await getCachedInitialImmigrationPosts() : [];
+
   return (
     <>
       <MobilePageHeader title="فرص الهجرة" sticky={false}>
@@ -32,7 +36,7 @@ export default function ImmigrationPage() {
         description="استكشف أحدث إعلانات الهجرة للعمل، الدراسة، أو التدريب في مختلف الدول."
       />
       <Suspense fallback={<div className="container"><ImmigrationListSkeleton /></div>}>
-        <PageContent />
+        <PageContent initialPosts={initialPosts} />
       </Suspense>
     </>
   );

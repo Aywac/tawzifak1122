@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { MobilePageHeader } from '@/components/layout/mobile-page-header';
 import { DesktopPageHeader } from '@/components/layout/desktop-page-header';
 import { PageContent } from './page-content';
+import { getCachedInitialArticles } from '@/lib/data';
 
 export const metadata: Metadata = {
   title: 'مقالات لنموك المهني - نصائح وإرشادات',
@@ -26,7 +27,9 @@ function ArticlesListSkeleton() {
   );
 }
 
-export default function ArticlesPage() {
+export default async function ArticlesPage() {
+  const initialArticles = await getCachedInitialArticles();
+
   return (
     <>
       <MobilePageHeader title="مقالات">
@@ -38,10 +41,9 @@ export default function ArticlesPage() {
         title="مقالات لنموك المهني"
         description="نقدم لك مجموعة من المقالات المختارة بعناية لمساعدتك على تطوير مهاراتك، والنجاح في مسيرتك المهنية، ومواكبة آخر تطورات سوق العمل."
       />
-        
       <div className="container mx-auto max-w-5xl px-4 pb-8">
         <Suspense fallback={<ArticlesListSkeleton />}>
-          <PageContent />
+          <PageContent initialArticles={initialArticles} />
         </Suspense>
       </div>
     </>

@@ -8,6 +8,7 @@ import { useSearchParams } from 'next/navigation';
 import { getJobSeekers } from '@/lib/data';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
+import { Timestamp } from 'firebase/firestore';
 
 const ITEMS_PER_PAGE = 16;
 
@@ -15,12 +16,13 @@ function JobFiltersSkeleton() {
   return <div className="h-14 bg-muted rounded-lg w-full animate-pulse" />;
 }
 
-export function PageContent() {
+export function PageContent({ initialWorkers = [] }: { initialWorkers?: Job[] }) {
   const searchParams = useSearchParams();
-  const [workers, setWorkers] = useState<Job[]>([]);
   
+  const [workers, setWorkers] = useState<Job[]>(initialWorkers);
   const [lastDoc, setLastDoc] = useState<FirestoreCursor>(null);
-  const [loading, setLoading] = useState(true);
+  
+  const [loading, setLoading] = useState(initialWorkers.length === 0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
@@ -31,12 +33,22 @@ export function PageContent() {
   const workType = searchParams.get('job');
 
   useEffect(() => {
+    const isInitialState = !q && !country && !city && !category && !workType && initialWorkers.length > 0;
+
+    if (isInitialState) {
+        setWorkers(initialWorkers);
+        setLastDoc(null);
+        setLoading(false);
+        setHasMore(initialWorkers.length >= ITEMS_PER_PAGE);
+        return;
+    }
+
     setWorkers([]);
     setLastDoc(null);
     setHasMore(true);
     setLoading(true);
     fetchWorkers(null, true);
-  }, [q, country, city, category, workType]);
+  }, [q, country, city, category, workType, initialWorkers]);
 
   const fetchWorkers = async (cursor: FirestoreCursor, isReset: boolean) => {
     try {
@@ -57,7 +69,12 @@ export function PageContent() {
       }
 
       setLastDoc(nextCursor);
-      setHasMore(newWorkers.length === ITEMS_PER_PAGE);
+      
+      if (newWorkers.length < ITEMS_PER_PAGE) {
+        setHasMore(false);
+      } else {
+        setHasMore(true);
+      }
 
     } catch (error) {
       console.error(error);
@@ -68,9 +85,18 @@ export function PageContent() {
   };
 
   const loadMore = () => {
-    if (!lastDoc) return;
     setLoadingMore(true);
-    fetchWorkers(lastDoc, false);
+
+    let cursorToUse = lastDoc;
+
+    if (!cursorToUse && workers.length > 0) {
+      const lastWorker = workers[workers.length - 1];
+      if (lastWorker.createdAtISO) {
+         cursorToUse = Timestamp.fromDate(new Date(lastWorker.createdAtISO));
+      }
+    }
+
+    fetchWorkers(cursorToUse, false);
   };
 
   return (
